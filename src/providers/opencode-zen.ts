@@ -23,7 +23,7 @@ export const openCodeZenAdapter: Adapter = {
 
     const usage = await context.requestJson(
       "https://opencode.ai/console/api/usage/models?range=30d&page=1&pageSize=50",
-      { headers, caBundle: context.caBundle, timeoutMs: 15_000 },
+      { headers, timeoutMs: 15_000 },
     );
     const usageBody = asRecord(usage.body) ?? {};
     const requests = asNumber(usageBody.requests) ?? asArray(usageBody.items).length;
@@ -33,7 +33,7 @@ export const openCodeZenAdapter: Adapter = {
     try {
       const budgets = await context.requestJson(
         "https://opencode.ai/console/api/budgets/service-accounts/status",
-        { headers, caBundle: context.caBundle, timeoutMs: 15_000 },
+        { headers, timeoutMs: 15_000 },
       );
       const rows = asArray(budgets.body);
       caps = rows.flatMap((row, index) => {

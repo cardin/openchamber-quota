@@ -365,7 +365,6 @@ body {
     grid-template-columns: minmax(0, 1.35fr) minmax(280px, .85fr);
     grid-template-areas:
       "header header"
-      "providers tls"
       "providers usage"
       "display display";
     align-items: start;
@@ -373,7 +372,6 @@ body {
 
   .quota-settings-header { grid-area: header; }
   .quota-providers-section { grid-area: providers; }
-  .quota-tls-section { grid-area: tls; }
   .quota-usage-section { grid-area: usage; }
   .quota-display-section { grid-area: display; }
   .quota-error { grid-column: 1 / -1; }

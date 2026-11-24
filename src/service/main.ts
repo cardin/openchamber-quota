@@ -1,12 +1,10 @@
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { loadConfig, saveConfig } from "./config.ts";
 import { CredentialStore } from "./credentials.ts";
 import { Scheduler } from "./scheduler.ts";
 import { SnapshotService } from "./snapshot.ts";
 import { handleRequest } from "./routes.ts";
-import { loadCaBundle } from "./tls.ts";
 
 const port = Number(process.env.OPENCHAMBER_SERVICE_PORT);
 const token = process.env.OPENCHAMBER_SERVICE_TOKEN ?? "";
@@ -18,14 +16,12 @@ if (!port || !token) {
   process.exit(1);
 }
 
-const config = await loadConfig(dataDir);
 const store = new CredentialStore(dataDir);
 await store.load();
 const snapshot = new SnapshotService({
   store,
   scheduler: new Scheduler(),
   dataDir,
-  caBundle: await loadCaBundle(config.caBundlePath).catch(() => undefined),
 });
 await snapshot.loadCache();
 
@@ -51,12 +47,6 @@ const server = http.createServer((request, response) => {
           snapshot,
           token,
           dataDir,
-          config,
-          saveConfig: async (next) => {
-            await saveConfig(dataDir, next);
-            config.caBundlePath = next.caBundlePath;
-            snapshot.setCaBundle(await loadCaBundle(next.caBundlePath).catch(() => undefined));
-          },
         },
         {
           method: request.method ?? "GET",

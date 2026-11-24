@@ -33,5 +33,5 @@
 
 - Reviewed 2026-11-23 against the amended [REQ 1–5](../../../docs/REQUIREMENTS.md) and the approved named provider set.
 - The Work Status section, provider list, custom-provider format, and data path are bounded. Planning owns the service API and provider adapters.
-- Residual implementation risks are tracked in [plan.md](../plan.md#resolved-decisions-and-residual-risks): Codex token lifetime, Zen API-key acceptance, CA trust, and provider rate limits.
+- Residual implementation risks are tracked in [plan.md](../plan.md#resolved-decisions-and-residual-risks): Codex token lifetime, Zen API-key acceptance, and provider rate limits.
 - The spec is implementation-ready; this checklist does not assert that the feature works.

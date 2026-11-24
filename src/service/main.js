@@ -7739,35 +7739,11 @@ var require_dist = __commonJS(function(exports, module) {
 // src/service/main.ts
 import http from "node:http";
 import os2 from "node:os";
-import path5 from "node:path";
-
-// src/service/config.ts
-import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
-import path from "node:path";
-var CONFIG_FILE = "config.json";
-var loadConfig = async (dataDir) => {
-  try {
-    const raw = await readFile(path.join(dataDir, CONFIG_FILE), "utf8");
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object")
-      return {};
-    const value = parsed;
-    return typeof value.caBundlePath === "string" && value.caBundlePath.trim() ? { caBundlePath: value.caBundlePath.trim() } : {};
-  } catch {
-    return {};
-  }
-};
-var saveConfig = async (dataDir, config) => {
-  await mkdir(dataDir, { recursive: true });
-  const file = path.join(dataDir, CONFIG_FILE);
-  const temp = `${file}.${process.pid}.tmp`;
-  await writeFile(temp, JSON.stringify({ version: 1, ...config }, null, 2), { mode: 384 });
-  await rename(temp, file);
-};
+import path4 from "node:path";
 
 // src/service/credentials.ts
-import { mkdir as mkdir2, readFile as readFile2, rename as rename2, writeFile as writeFile2 } from "node:fs/promises";
-import path2 from "node:path";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import path from "node:path";
 var EMPTY = { version: 1, connections: [] };
 var isRecord = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 var normalizeFile = (value) => {
@@ -7793,20 +7769,20 @@ class CredentialStore {
   data = { ...EMPTY };
   constructor(dataDir) {
     this.dataDir = dataDir;
-    this.file = path2.join(dataDir, "connections.json");
+    this.file = path.join(dataDir, "connections.json");
   }
   async load() {
     try {
-      this.data = normalizeFile(JSON.parse(await readFile2(this.file, "utf8")));
+      this.data = normalizeFile(JSON.parse(await readFile(this.file, "utf8")));
     } catch {
       this.data = { ...EMPTY };
     }
   }
   async save() {
-    await mkdir2(this.dataDir, { recursive: true });
+    await mkdir(this.dataDir, { recursive: true });
     const temp = `${this.file}.${process.pid}.tmp`;
-    await writeFile2(temp, JSON.stringify(this.data, null, 2), { mode: 384 });
-    await rename2(temp, this.file);
+    await writeFile(temp, JSON.stringify(this.data, null, 2), { mode: 384 });
+    await rename(temp, this.file);
   }
   list() {
     return this.data.connections.map(toPublic);
@@ -7939,8 +7915,8 @@ class Scheduler {
 }
 
 // src/service/snapshot.ts
-import { mkdir as mkdir3, readFile as readFile4, rename as rename3, writeFile as writeFile3 } from "node:fs/promises";
-import path4 from "node:path";
+import { mkdir as mkdir2, readFile as readFile3, rename as rename2, writeFile as writeFile2 } from "node:fs/promises";
+import path3 from "node:path";
 
 // src/service/http.ts
 import https from "node:https";
@@ -7976,8 +7952,7 @@ var requestOnce = (url, options, redirects) => new Promise((resolve, reject) => 
   const request = https.request(target, {
     method: options.method ?? "GET",
     headers: options.headers,
-    timeout: options.timeoutMs ?? 1e4,
-    ca: options.caBundle
+    timeout: options.timeoutMs ?? 1e4
   }, (response) => {
     const status = response.statusCode ?? 0;
     if (status >= 300 && status < 400) {
@@ -8168,7 +8143,6 @@ var customAdapter = {
       throw new HttpError("not_configured", "The custom provider has no key.");
     const response = await context.requestJson(endpoint.toString(), {
       headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
-      caBundle: context.caBundle,
       timeoutMs: 1e4,
       maxBytes: 65536
     });
@@ -8180,9 +8154,9 @@ var customAdapter = {
 };
 
 // src/providers/codex.ts
-import { readFile as readFile3 } from "node:fs/promises";
+import { readFile as readFile2 } from "node:fs/promises";
 import os from "node:os";
-import path3 from "node:path";
+import path2 from "node:path";
 var labelFor = (seconds) => {
   if (!seconds)
     return "Limit";
@@ -8196,7 +8170,7 @@ var labelFor = (seconds) => {
 };
 var readCodexLogin = async (codexHome) => {
   try {
-    const raw = JSON.parse(await readFile3(path3.join(codexHome, "auth.json"), "utf8"));
+    const raw = JSON.parse(await readFile2(path2.join(codexHome, "auth.json"), "utf8"));
     if (typeof raw.tokens?.access_token !== "string" || !raw.tokens.access_token)
       return null;
     return {
@@ -8235,7 +8209,7 @@ var codexAdapter = {
   kind: "codex",
   minIntervalMs: 5 * 60000,
   fetch: async (connection, context) => {
-    const imported = connection.secret.accessToken ? { accessToken: connection.secret.accessToken, accountId: connection.secret.accountId } : await readCodexLogin(context.codexHome ?? path3.join(os.homedir(), ".codex"));
+    const imported = connection.secret.accessToken ? { accessToken: connection.secret.accessToken, accountId: connection.secret.accountId } : await readCodexLogin(context.codexHome ?? path2.join(os.homedir(), ".codex"));
     if (!imported)
       throw new HttpError("not_configured", "No OpenAI / Codex login was found. Run `codex login`.");
     const headers = {
@@ -8246,7 +8220,6 @@ var codexAdapter = {
       headers["ChatGPT-Account-Id"] = imported.accountId;
     const response = await context.requestJson("https://chatgpt.com/backend-api/wham/usage", {
       headers,
-      caBundle: context.caBundle,
       timeoutMs: 15000
     }).catch((error) => {
       if (error instanceof HttpError && error.code === "auth") {
@@ -8320,7 +8293,6 @@ var openCodeGoAdapter = {
         "x-opencode-session": "openchamber-quota",
         "User-Agent": "OpenChamber quota display"
       },
-      caBundle: context.caBundle,
       timeoutMs: 15000
     };
     try {
@@ -8385,13 +8357,13 @@ var openCodeZenAdapter = {
     };
     if (connection.accountId)
       headers["x-org-id"] = connection.accountId;
-    const usage = await context.requestJson("https://opencode.ai/console/api/usage/models?range=30d&page=1&pageSize=50", { headers, caBundle: context.caBundle, timeoutMs: 15000 });
+    const usage = await context.requestJson("https://opencode.ai/console/api/usage/models?range=30d&page=1&pageSize=50", { headers, timeoutMs: 15000 });
     const usageBody = asRecord(usage.body) ?? {};
     const requests = asNumber(usageBody.requests) ?? asArray(usageBody.items).length;
     const balances = [{ id: "requests", label: "Requests (30d)", value: requests, unit: "requests" }];
     let caps = [];
     try {
-      const budgets = await context.requestJson("https://opencode.ai/console/api/budgets/service-accounts/status", { headers, caBundle: context.caBundle, timeoutMs: 15000 });
+      const budgets = await context.requestJson("https://opencode.ai/console/api/budgets/service-accounts/status", { headers, timeoutMs: 15000 });
       const rows = asArray(budgets.body);
       caps = rows.flatMap((row, index) => {
         const entry = asRecord(row);
@@ -8448,7 +8420,6 @@ var openRouterAdapter = {
       throw new HttpError("not_configured", "OpenRouter has no API key.");
     const response = await context.requestJson("https://openrouter.ai/api/v1/key", {
       headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
-      caBundle: context.caBundle,
       timeoutMs: 1e4
     });
     const body = asRecord(response.body) ?? {};
@@ -8545,7 +8516,6 @@ var tavilyAdapter = {
       throw new HttpError("not_configured", "Tavily has no API key.");
     const response = await context.requestJson("https://api.tavily.com/usage", {
       headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
-      caBundle: context.caBundle,
       timeoutMs: 1e4
     });
     const body = asRecord(response.body) ?? {};
@@ -8947,12 +8917,9 @@ class SnapshotService {
     this.deps = deps;
     this.now = deps.now ?? Date.now;
   }
-  setCaBundle(caBundle) {
-    this.deps.caBundle = caBundle;
-  }
   async loadCache() {
     try {
-      const { scheduler, ...cached } = JSON.parse(await readFile4(path4.join(this.deps.dataDir, "cache.json"), "utf8"));
+      const { scheduler, ...cached } = JSON.parse(await readFile3(path3.join(this.deps.dataDir, "cache.json"), "utf8"));
       if (!validateSnapshot(cached))
         return;
       this.generatedAt = cached.generatedAt;
@@ -8966,7 +8933,6 @@ class SnapshotService {
       now: this.now,
       requestJson: this.deps.requestJson ?? requestJson,
       dataDir: this.deps.dataDir,
-      caBundle: this.deps.caBundle,
       codexHome: this.deps.codexHome
     };
   }
@@ -9098,11 +9064,11 @@ class SnapshotService {
     }
   }
   async saveCache() {
-    await mkdir3(this.deps.dataDir, { recursive: true });
-    const file = path4.join(this.deps.dataDir, "cache.json");
+    await mkdir2(this.deps.dataDir, { recursive: true });
+    const file = path3.join(this.deps.dataDir, "cache.json");
     const temp = `${file}.${process.pid}.tmp`;
-    await writeFile3(temp, JSON.stringify({ ...this.getSnapshot(), scheduler: this.deps.scheduler.exportState() }, null, 2), { mode: 384 });
-    await rename3(temp, file);
+    await writeFile2(temp, JSON.stringify({ ...this.getSnapshot(), scheduler: this.deps.scheduler.exportState() }, null, 2), { mode: 384 });
+    await rename2(temp, file);
   }
 }
 
@@ -9260,50 +9226,23 @@ var handleRequest = async (deps, request) => {
     const result = await deps.snapshot.testConnection(parts[1]);
     return json(200, result);
   }
-  if (method === "GET" && url.pathname === "/config") {
-    return json(200, { caBundlePath: deps.config.caBundlePath ?? null });
-  }
-  if (method === "PUT" && url.pathname === "/config") {
-    const body = readBody(request.body);
-    if (body === null)
-      return error2(400, "bad_request", "Body must be JSON.");
-    const value = body.caBundlePath;
-    if (value !== undefined && value !== null && typeof value !== "string") {
-      return error2(400, "bad_request", "caBundlePath must be a string or null.");
-    }
-    deps.config.caBundlePath = typeof value === "string" && value.trim() ? value.trim() : undefined;
-    await deps.saveConfig(deps.config);
-    return json(200, { caBundlePath: deps.config.caBundlePath ?? null });
-  }
   return error2(404, "not_found", "Unknown route.");
-};
-
-// src/service/tls.ts
-import { readFile as readFile5 } from "node:fs/promises";
-var loadCaBundle = async (path) => {
-  if (!path)
-    return;
-  return readFile5(path, "utf8");
 };
 
 // src/service/main.ts
 var port = Number(process.env.OPENCHAMBER_SERVICE_PORT);
 var token = process.env.OPENCHAMBER_SERVICE_TOKEN ?? "";
-var dataDir = process.env.OPENCHAMBER_SERVICE_DATA_DIR ?? path5.join(os2.homedir(), ".openchamber-quota");
+var dataDir = process.env.OPENCHAMBER_SERVICE_DATA_DIR ?? path4.join(os2.homedir(), ".openchamber-quota");
 if (!port || !token) {
   console.error("OPENCHAMBER_SERVICE_PORT and OPENCHAMBER_SERVICE_TOKEN are required");
   process.exit(1);
 }
-var config = await loadConfig(dataDir);
 var store = new CredentialStore(dataDir);
 await store.load();
 var snapshot = new SnapshotService({
   store,
   scheduler: new Scheduler,
-  dataDir,
-  caBundle: await loadCaBundle(config.caBundlePath).catch(() => {
-    return;
-  })
+  dataDir
 });
 await snapshot.loadCache();
 var server = http.createServer((request, response) => {
@@ -9327,15 +9266,7 @@ var server = http.createServer((request, response) => {
         store,
         snapshot,
         token,
-        dataDir,
-        config,
-        saveConfig: async (next) => {
-          await saveConfig(dataDir, next);
-          config.caBundlePath = next.caBundlePath;
-          snapshot.setCaBundle(await loadCaBundle(next.caBundlePath).catch(() => {
-            return;
-          }));
-        }
+        dataDir
       }, {
         method: request.method ?? "GET",
         path: request.url ?? "/",

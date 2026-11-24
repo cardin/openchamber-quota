@@ -4,7 +4,7 @@
 
 **Input**: [Living requirements, REQ 1–5](../../docs/REQUIREMENTS.md).
 
-**Status**: Implementation is present and verified with an isolated OpenChamber 2.8.0 host and local HTTPS fixture. Live-account and corporate CA verification remain pending.
+**Status**: Implementation is present and verified with an isolated OpenChamber 2.8.0 host and local HTTPS fixture. Live-account verification remains pending.
 
 ## Summary
 
@@ -17,17 +17,17 @@ Add a **Quotas** section to OpenChamber's Work Status panel. The section is disp
 - **Pages surface:** A `contributes.page` full-screen page from the sidebar Pages, verified in OpenChamber 2.8.0 without a host change.
 - **Data path:** `host.serviceRequest` → local service. The service exposes a small JSON API, holds provider credentials, enforces rate limits, and returns a secret-free snapshot.
 - **Storage:** Display selections and preferences in instance-scoped `host.storage`; provider credentials in the service data directory with `0600`, atomic writes, and no logging. No credentials in the frame, responses, or preferences.
-- **Testing:** Deterministic fixtures and a controlled clock for normalization, benchmarks, colors, state transitions, and scheduling. Contract tests for the service API and custom format. Host smoke test for mount/unload, service round-trip, CA trust, and two-instance isolation. Live providers are manually tested and excluded from CI.
+- **Testing:** Deterministic fixtures and a controlled clock for normalization, benchmarks, colors, state transitions, and scheduling. Contract tests for the service API and custom format. Host smoke test for mount/unload, service round-trip, and two-instance isolation. Live providers are manually tested and excluded from CI.
 - **Target platform:** OpenChamber v2.7.3 or later with status sections; web, desktop, and phone. VS Code loads no extensions.
 - **Performance:** One in-flight request per provider/account, coalesced. Service minimum intervals: Tavily 10 minutes (10 requests/10 minutes endpoint limit); others 5 minutes unless the provider documents otherwise. Manual refresh is subject to the same limits. No timer runs while the section is unloaded.
-- **Security:** HTTPS only; redirects rejected; TLS verification preserved; configurable CA bundle for the corporate root; custom endpoints reject credentials in URLs and never return secrets.
+- **Security:** HTTPS only; redirects rejected; TLS verification uses the system trust store; no custom CA bundle is supported; custom endpoints reject credentials in URLs and never return secrets.
 - **Scope:** REQ 2 set: custom, Codex, OpenCode Go, OpenRouter, Tavily, OpenCode Zen. Key/token paths first; Codex uses an imported Codex CLI login. Zen falls back to a clear auth error if its API key cannot read usage.
 
 ## Constitution Check
 
 - **Pre-research: Pass.** The [Spec Kit constitution](../../.specify/memory/constitution.md) is an unratified template. Apply [repository governance](../../AGENTS.md): living requirements are authoritative, changes need approval, and verification is bounded and traceable.
 - **Phase 1 entry: Pass.** Surface, scope, and data path are decided. The living requirements were amended for REQ 1 and REQ 2 with approval.
-- **Post-design: Pass with residual risks.** The local service duplicates some provider logic because the host exposes no read. That complexity is justified by the no-host-change constraint. The remaining risks are provider auth changes, CA trust in the service process, and unproven unload timing.
+- **Post-design: Pass with residual risks.** The local service duplicates some provider logic because the host exposes no read. That complexity is justified by the no-host-change constraint. The remaining risks are provider auth changes and unproven unload timing.
 
 ## Project Structure
 
@@ -65,9 +65,7 @@ src/
 │   ├── credentials.ts
 │   ├── scheduler.ts
 │   ├── snapshot.ts
-│   ├── config.ts
-│   ├── http.ts
-│   └── tls.ts
+│   └── http.ts
 ├── providers/
 │   ├── types.ts
 │   ├── parse.ts
@@ -78,7 +76,7 @@ src/
 │   ├── opencode-zen.ts
 │   ├── openrouter.ts
 │   └── tavily.ts
-├── settings/             # Full-screen Pages entry: connections, selection, CA
+├── settings/             # Full-screen Pages entry: connections and display
 │   ├── index.html
 │   ├── style.css
 │   └── main.ts
@@ -106,4 +104,4 @@ The earlier status probe has been removed from the tree; its results are recorde
    - OpenCode Zen: Console `/usage/models` and `/budgets/service-accounts/status`, Bearer key or token; verify the API-key path.
    - Codex: `GET https://chatgpt.com/backend-api/wham/usage`, Bearer access token from an imported Codex CLI login; no OAuth flow in the first release.
 4. **REQ 4 persistence — designed.** Instance-scoped `host.storage`; a newly added provider is auto-enabled with its current windows while new window types stay opt-in. Credentials stay in the service data directory.
-5. **Residual risks.** The service round-trip, collapse/unload, restart, two-instance isolation, and local CA trust passed in the isolated host; see [verification.md](verification.md). Live accounts (including Codex token expiry and Zen API-key acceptance), the corporate CA, and Windows data-directory permissions still need verification.
+5. **Residual risks.** The service round-trip, collapse/unload, restart, and two-instance isolation passed in the isolated host; see [verification.md](verification.md). Live accounts (including Codex token expiry and Zen API-key acceptance) and Windows data-directory permissions still need verification.

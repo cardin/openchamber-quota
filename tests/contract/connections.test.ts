@@ -22,8 +22,6 @@ const setup = async (): Promise<RouteDeps> => {
     } as unknown as SnapshotService,
     token: "token",
     dataDir: dir,
-    config: {},
-    saveConfig: async () => {},
   };
 };
 

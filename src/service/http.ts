@@ -19,7 +19,6 @@ export type HttpOptions = {
   method?: string;
   headers?: Record<string, string>;
   timeoutMs?: number;
-  caBundle?: string;
   body?: string;
   maxBytes?: number;
 };
@@ -53,7 +52,6 @@ const requestOnce = (
         method: options.method ?? "GET",
         headers: options.headers,
         timeout: options.timeoutMs ?? 10_000,
-        ca: options.caBundle,
       },
       (response) => {
         const status = response.statusCode ?? 0;
@@ -122,9 +120,3 @@ const requestOnce = (
 
 export const requestJson = (url: string, options: HttpOptions = {}): Promise<HttpResult> =>
   requestOnce(url, options, 0);
-
-export const readCaBundle = async (path: string | undefined): Promise<string | undefined> => {
-  if (!path) return undefined;
-  const { readFile } = await import("node:fs/promises");
-  return readFile(path, "utf8");
-};

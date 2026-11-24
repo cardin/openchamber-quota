@@ -99,7 +99,6 @@ export const customAdapter: Adapter = {
     if (!apiKey) throw new HttpError("not_configured", "The custom provider has no key.");
     const response = await context.requestJson(endpoint.toString(), {
       headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
-      caBundle: context.caBundle,
       timeoutMs: 10_000,
       maxBytes: 65_536,
     });

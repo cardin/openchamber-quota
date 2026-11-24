@@ -14,7 +14,7 @@ import {
   toggleWindow,
 } from "../section/preferences.ts";
 import { serviceCall } from "../section/host.ts";
-import { renderConnections, renderTls } from "../section/view/connections.ts";
+import { renderConnections } from "../section/view/connections.ts";
 import { renderUsage } from "../section/view/usage.ts";
 import { renderSelector } from "../section/view/selector.ts";
 import { escapeHtml } from "../section/view/html.ts";
@@ -28,7 +28,6 @@ if (!root) throw new Error("Missing #root");
 let snapshot: Snapshot | null = null;
 let connections: Connection[] = [];
 let selection: DisplaySelection = { ...DEFAULT_SELECTION };
-let caBundlePath: string | null = null;
 let error = "";
 let started = false;
 let editingId: string | null = null;
@@ -37,12 +36,6 @@ const loadConnections = async (): Promise<void> => {
   const response = await call({ method: "GET", path: "/connections" });
   const body = response.body as { connections?: Connection[] };
   connections = Array.isArray(body?.connections) ? body.connections : [];
-};
-
-const loadConfig = async (): Promise<void> => {
-  const response = await call({ method: "GET", path: "/config" });
-  const body = response.body as { caBundlePath?: string | null };
-  caBundlePath = typeof body?.caBundlePath === "string" ? body.caBundlePath : null;
 };
 
 const loadSnapshot = async (): Promise<void> => {
@@ -137,7 +130,7 @@ const fillConnectionForm = (connection: Connection): void => {
 const reload = async (): Promise<void> => {
   error = "";
   try {
-    await Promise.all([loadConnections(), loadConfig()]);
+    await loadConnections();
     await refreshQuota();
     render();
   } catch (cause) {
@@ -155,7 +148,6 @@ const render = (): void => {
   </header>
   ${error ? `<div class="quota-error" role="alert">${escapeHtml(error)}</div>` : ""}
   ${renderConnections(connections)}
-  ${renderTls(caBundlePath)}
   ${renderUsage(snapshot)}
   ${snapshot ? renderSelector(snapshot, selection) : `<div class="quota-row-loading">Loading quota…</div>`}`;
   syncConnectionForm();
@@ -256,32 +248,6 @@ const saveConnection = (form: HTMLFormElement): void => {
   })();
 };
 
-const saveCa = (form: HTMLFormElement): void => {
-  const data = new FormData(form);
-  const value = String(data.get("caBundlePath") ?? "").trim();
-  void (async () => {
-    try {
-      const response = await call({
-        method: "PUT",
-        path: "/config",
-        body: { caBundlePath: value || null },
-      });
-      if (response.status >= 400) {
-        await host.toast({ kind: "error", message: "Could not save the TLS setting." });
-        return;
-      }
-      caBundlePath = value || null;
-      await host.toast({ kind: "success", message: "TLS setting saved." });
-      render();
-    } catch (cause) {
-      await host.toast({
-        kind: "error",
-        message: cause instanceof Error ? cause.message : "Could not reach the quota service.",
-      });
-    }
-  })();
-};
-
 root.addEventListener("click", (event) => {
   const target = (event.target as HTMLElement).closest<HTMLElement>("[data-action]");
   if (!target) return;
@@ -289,11 +255,6 @@ root.addEventListener("click", (event) => {
   if (action === "save-connection") {
     const form = target.closest<HTMLFormElement>('[data-form="connection"]');
     if (form) saveConnection(form);
-    return;
-  }
-  if (action === "save-ca") {
-    const form = target.closest<HTMLFormElement>('[data-form="ca"]');
-    if (form) saveCa(form);
     return;
   }
   if (action === "edit-connection" && target.dataset.id) {
@@ -408,7 +369,7 @@ host.onReady((context) => {
   void (async () => {
     try {
       selection = await loadSelection(host.storage);
-      await Promise.all([loadConnections(), loadConfig(), loadSnapshot()]);
+      await Promise.all([loadConnections(), loadSnapshot()]);
       render();
       void refreshQuota()
         .then(render)

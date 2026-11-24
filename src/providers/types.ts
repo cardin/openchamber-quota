@@ -11,7 +11,6 @@ export type AdapterContext = {
   now: () => number;
   requestJson: (url: string, options: HttpOptions) => Promise<HttpResult>;
   dataDir: string;
-  caBundle?: string;
   codexHome?: string;
 };
 

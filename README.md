@@ -25,11 +25,13 @@ Install this folder from **Settings → Extensions → Install from folder**, th
 
 Open **Quota settings** from the sidebar's **Pages** section. The Pages entry is the supported configuration surface in OpenChamber 2.8.0.
 
-- Add or remove providers, test a connection, and set the CA bundle path.
+- Add or remove providers and test a connection.
 - View non-resetting balances such as Tavily PAYG usage, with a per-provider option to hide them.
 - Choose which providers and windows appear in the panel.
 - Under **Display → Show quota as**, choose **Remaining** (default) or **Used** for windows and caps.
 - Set the danger cutoff and relative/absolute reset time.
+
+Provider requests use HTTPS with the system trust store.
 
 The Work Status section is display-only. Its header has a single refresh icon.
 

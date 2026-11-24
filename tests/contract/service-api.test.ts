@@ -46,8 +46,6 @@ const deps = async (): Promise<{ deps: RouteDeps; dir: string; refreshed: string
       snapshot,
       token: "token",
       dataDir: dir,
-      config: {},
-      saveConfig: async () => {},
     },
   };
 };
@@ -243,15 +241,14 @@ describe("service contracts", () => {
     expect(result.status).toBe(409);
   });
 
-  test("config round-trips the CA path", async () => {
+  test("does not expose a custom TLS configuration endpoint", async () => {
     const { deps: routeDeps } = await deps();
+    const get = await handleRequest(routeDeps, request("GET", "/config"));
+    expect(get.status).toBe(404);
     const put = await handleRequest(
       routeDeps,
       request("PUT", "/config", JSON.stringify({ caBundlePath: "/tmp/ca.pem" })),
     );
-    expect(put.status).toBe(200);
-    expect((put.body as { caBundlePath: string }).caBundlePath).toBe("/tmp/ca.pem");
-    const get = await handleRequest(routeDeps, request("GET", "/config"));
-    expect((get.body as { caBundlePath: string }).caBundlePath).toBe("/tmp/ca.pem");
+    expect(put.status).toBe(404);
   });
 });

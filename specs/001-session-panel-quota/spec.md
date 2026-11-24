@@ -181,6 +181,6 @@ As an OpenChamber user, I want providers with quota data to be available, includ
 
 - **REQ 1 — Refresh and failure states:** Resolved. The section loads the snapshot every 5 seconds, attempts a refresh on mount, every 60 seconds, at reset, and manually. The service enforces provider limits and schedules a retry when an attempt is blocked. Host timing remains a verification item.
 - **REQ 1 — Display details:** Resolved. Rows show quota remaining by default, or quota used when configured. Reset times are relative by default. The countdown refreshes from the snapshot poll.
-- **REQ 2/3 — Host integration and provider coverage:** Resolved for OpenChamber 2.8.0. A local guest service owns provider I/O and credentials. Live Zen key support, Codex token lifetime, CA trust, and load/unload timing remain verification items.
+- **REQ 2/3 — Host integration and provider coverage:** Resolved for OpenChamber 2.8.0. A local guest service owns provider I/O and credentials. Live Zen key support, Codex token lifetime, and load/unload timing remain verification items.
 - **REQ 4 — Selection behavior:** Resolved. Removed providers retain their window selection. A newly added provider is auto-enabled with its current windows; a newly reported window type stays opt-in.
 - **REQ 5 — Custom provider setup:** Resolved. Add, edit, and remove are in Quota settings; custom labels are unique; one supported format, no mappings.

@@ -13,7 +13,7 @@
 
 ## Data path: local guest service
 
-- **Decision:** The extension ships a local service. The section calls `host.serviceRequest`, and the service owns provider requests, credentials, caching, scheduling, and TLS. No OpenChamber host change.
+- **Decision:** The extension ships a local service. The section calls `host.serviceRequest`, and the service owns provider requests, credentials, caching, and scheduling. No OpenChamber host change.
 - **Rationale:** The probe confirmed the stock guest cannot read quota data: `host.request` returned `HOST_REJECTED: not-found`, page `fetch` was blocked, and no service existed. The host refuses browser access to its credential list, and reading OpenCode's raw credential store is out of bounds.
 - **Alternatives considered:**
   - Host bridge (rejected: no rights to OpenChamber, no code changes).
@@ -37,13 +37,13 @@
 - **Codex** has no API-key quota path. Import `~/.codex/auth.json` (`tokens.access_token`, `tokens.account_id`) with explicit user action; never read OpenChamber's store. Token expiry surfaces as an auth error.
 - **Zen** API-key support must be confirmed with a live key; if it fails, show an auth error and reassess the connection method with approval. No OAuth flow is planned for the first release.
 
-## Credentials, storage, and TLS
+## Credentials, storage, and trust
 
 - **Credentials:** Stored in `OPENCHAMBER_SERVICE_DATA_DIR` with `0600` on POSIX (user ACL on Windows), atomic writes, no logs, and no return in any response. The section sends secrets only to the service via the host proxy. Codex imports a vendor CLI login on user action; no host credential store.
 - **OpenCode credentials are not a service input.** OpenChamber does not give the guest service the OpenCode endpoint or its connection token. A local process could try `opencode api`, read OpenCode's database, or call the credential route, but that is not a supported service contract, couples the plugin to OpenCode internals, and reads another application's secret store. The plan keeps per-provider connections instead.
 - **The built-in Usage values are host-owned.** The Codex and OpenCode Go rows in Work Status are rendered by the host from its own quota readers. A guest section is a sandboxed iframe: it cannot read that DOM, and the host's `/api/quota` routes are not exposed to guests (the probe's `fetch` failed). Seeing the values there proves the host has the data, not that a plugin can read it. The service must fetch the same provider data itself.
 - **Preferences:** Instance-scoped `host.storage`; no secrets. Saved empty selections are distinct from first use.
-- **TLS:** HTTPS only, redirects rejected, hostname verification preserved. The service cannot rely on `NODE_EXTRA_CA_CERTS` because the guest service environment is allowlisted. Provide a `caBundlePath` setting; load the PEM and pass it to the HTTPS request. Default to the runtime's CA store. Test with a local CA stub.
+- **TLS trust:** HTTPS only, redirects rejected, and hostname verification preserved. The service uses the runtime's trust store. Custom CA bundles are not supported.
 - **Custom endpoints:** Reject credentials in URLs and fragments. Allow private destinations only with an explicit opt-in. Bound timeout and response size.
 
 ## Custom provider format
@@ -56,7 +56,7 @@ One versioned, read-only JSON format, `openchamber-quota-v1`, with optional wind
 - **Caps and balances:** No reset, no benchmark. Caps show remaining vs maximum; balances show a number. Zero is valid, not missing.
 - **Refresh:** The service coalesces one request per provider/account and enforces minimum intervals. The section loads the snapshot every 5 seconds for countdowns, attempts a refresh on mount and every 60 seconds while mounted, and refreshes at reset; the service enforces provider limits and schedules a retry when an attempt is blocked. Manual refresh uses the same limits. Expired windows show loading until the next allowed fetch.
 - **Errors:** `not_configured`, `auth`, `rate_limited` (with retry time), `timeout`, `network`, `bad_response`, `provider_error`. A failed provider hides its old values; other providers remain visible.
-- **Verification:** Fixtures and a controlled clock for unit/contract tests; host smoke test for section mount, service round-trip, CA trust, and restart isolation. No live-provider calls in CI.
+- **Verification:** Fixtures and a controlled clock for unit/contract tests; host smoke test for section mount, service round-trip, and restart isolation. No live-provider calls in CI.
 
 ## Residual unknowns
 

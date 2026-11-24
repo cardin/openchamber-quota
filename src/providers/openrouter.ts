@@ -44,7 +44,6 @@ export const openRouterAdapter: Adapter = {
     if (!apiKey) throw new HttpError("not_configured", "OpenRouter has no API key.");
     const response = await context.requestJson("https://openrouter.ai/api/v1/key", {
       headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
-      caBundle: context.caBundle,
       timeoutMs: 10_000,
     });
     const body = asRecord(response.body) ?? {};

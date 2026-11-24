@@ -67,7 +67,6 @@ export const codexAdapter: Adapter = {
     if (imported.accountId) headers["ChatGPT-Account-Id"] = imported.accountId;
     const response = await context.requestJson("https://chatgpt.com/backend-api/wham/usage", {
       headers,
-      caBundle: context.caBundle,
       timeoutMs: 15_000,
     }).catch((error: unknown) => {
       if (error instanceof HttpError && error.code === "auth") {

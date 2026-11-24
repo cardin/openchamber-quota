@@ -41,7 +41,6 @@ export const tavilyAdapter: Adapter = {
     if (!apiKey) throw new HttpError("not_configured", "Tavily has no API key.");
     const response = await context.requestJson("https://api.tavily.com/usage", {
       headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
-      caBundle: context.caBundle,
       timeoutMs: 10_000,
     });
     const body = asRecord(response.body) ?? {};

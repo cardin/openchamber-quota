@@ -145,15 +145,15 @@ description: "Task list for Session Panel quota display"
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
-- [X] T048 [P] Implement `src/service/tls.ts` and a `caBundlePath` setting: HTTPS only, reject redirects, preserve hostname/CA verification, and load the configured PEM for the service requests.
+- [X] T048 [P] Keep provider requests HTTPS-only, reject redirects, and preserve hostname verification with the system trust store. Do not expose a custom CA bundle setting.
 - [X] T049 [P] Add `tests/unit/secrets.test.ts` asserting snapshots, logs, errors, and section storage never contain keys, tokens, endpoints, account IDs, or raw upstream bodies.
 - [X] T050 [P] Add accessibility checks in `tests/unit/a11y.test.ts` for bar roles, accessible names, and warning/danger state classes. Host theme contrast and keyboard focus order are manual checks, not unit-test coverage.
 - [X] T051 [P] Add `tests/unit/scheduler.test.ts` for one in-flight request, coalescing, Tavily 10-minute minimum, 5-minute defaults, `Retry-After`, reset refresh, and no timers while unmounted.
-- [X] T052 [P] Update `README.md` with install, connection setup, CA configuration, and the no-OpenChamber-credential rule.
+- [X] T052 [P] Update `README.md` with install, connection setup, system TLS trust, and the no-OpenChamber-credential rule.
 - [ ] T053 Run [quickstart.md](quickstart.md) end to end and record the results in `specs/001-session-panel-quota/verification.md`.
 - [X] T054 Run `bun run typecheck`, `bun test`, and `bun run build`; fix failures and confirm the package installs cleanly.
 - [X] T055 Make the Work Status section display-only: no Manage button, no provider/window selector, no settings forms, and a single refresh icon.
-- [X] T056 Add the `Quota settings` full-screen page in `src/settings/` for connections, non-resetting usage, window selection, cutoff, reset time, and CA; add `contributes.page` and the build step.
+- [X] T056 Add the `Quota settings` full-screen page in `src/settings/` for connections, non-resetting usage, window selection, cutoff, and reset time; add `contributes.page` and the build step.
 - [X] T057 Update README, quickstart, plan, and verification for the Pages settings surface and the display-only panel.
 
 ---
@@ -213,7 +213,7 @@ T045 Implement OpenCode Zen adapter in src/providers/opencode-zen.ts
 3. US3 → caps/balances.
 4. US2 → selection and persistence.
 5. US4 remaining providers (Go, Codex, Zen) → full REQ 2 coverage.
-6. Polish → TLS, secrets, accessibility, rate limits, docs.
+6. Polish → system TLS trust, secrets, accessibility, rate limits, docs.
 
 ## Notes
 
@@ -226,7 +226,7 @@ T045 Implement OpenCode Zen adapter in src/providers/opencode-zen.ts
 
 ## Pending Host Verification
 
-T047 and T053 remain open for live provider accounts and the full quickstart, including the corporate CA. The isolated host fixture checks passed; see `verification.md`.
+T047 and T053 remain open for live provider accounts and the full quickstart. The isolated host fixture checks passed; see `verification.md`.
 
 ## Phase 8: Convergence
 

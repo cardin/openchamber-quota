@@ -52,20 +52,3 @@ export const renderConnections = (connections: Connection[]): string => {
     </form>
   </section>`;
 };
-
-export const renderTls = (caBundlePath: string | null): string => `<section class="quota-settings-section quota-tls-section">
-  <div class="quota-section-heading">
-    <div>
-      <h3>TLS</h3>
-      <p class="quota-section-note">Optional corporate root certificate for provider requests.</p>
-    </div>
-  </div>
-  <form data-form="ca" class="quota-form">
-    <label class="quota-field quota-field-full">CA bundle path (optional)
-      <input name="caBundlePath" value="${caBundlePath ? escapeAttr(caBundlePath) : ""}" placeholder="C:\\certs\\corporate-root.pem" />
-    </label>
-    <span class="quota-form-actions quota-field-full">
-      <button type="button" data-action="save-ca">Save TLS setting</button>
-    </span>
-  </form>
-</section>`;

@@ -19,7 +19,6 @@ type Deps = {
   store: CredentialStore;
   scheduler: Scheduler;
   dataDir: string;
-  caBundle?: string;
   now?: () => number;
   codexHome?: string;
   requestJson?: typeof requestJson;
@@ -57,10 +56,6 @@ export class SnapshotService {
     this.now = deps.now ?? Date.now;
   }
 
-  setCaBundle(caBundle?: string): void {
-    this.deps.caBundle = caBundle;
-  }
-
   async loadCache(): Promise<void> {
     try {
       const { scheduler, ...cached } = JSON.parse(
@@ -80,7 +75,6 @@ export class SnapshotService {
       now: this.now,
       requestJson: this.deps.requestJson ?? requestJson,
       dataDir: this.deps.dataDir,
-      caBundle: this.deps.caBundle,
       codexHome: this.deps.codexHome,
     };
   }

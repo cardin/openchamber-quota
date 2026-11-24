@@ -3,11 +3,11 @@
 | Date | Check | Result | Notes |
 | --- | --- | --- | --- |
 | 2026-11-24 | TypeScript typecheck | Pass | `bun run typecheck` |
-| 2026-11-24 | Unit, contract, integration tests | Pass | 88 tests, 0 failures |
+| 2026-11-24 | Unit, contract, integration tests | Pass | 97 tests, 0 failures |
 | 2026-11-24 | Section, settings, and service build | Pass | `bun run build` |
 | 2026-11-24 | Manifest validation | Pass | `openchamber-guest-check .` |
 | 2026-11-24 | Section is display-only (simulated) | Pass | No Manage/selector; header refresh control registered |
-| 2026-11-24 | Quota settings page render (simulated) | Pass | Connections, selector, cutoff/reset, CA fields |
+| 2026-11-24 | Quota settings page render (simulated) | Pass | Connections, usage, selector, and cutoff/reset; no TLS card |
 | 2026-11-24 | Section render in a simulated host | Pass | Fixture provider rendered a bar and refresh icon |
 | 2026-11-24 | Selection first-use and provider auto-enable | Pass | Unit/integration tests cover unchecking from the default and adding a provider without overwriting retained windows |
 | 2026-11-24 | Caps show remaining | Pass | `821 / 1000` with an 82% remaining bar; used-over-limit clamps to zero |
@@ -29,17 +29,16 @@
 | 2026-11-24 | Host preferences (T029) | Pass | Deselect a window, auto-enable a new provider, leave a staged new window type opt-in, and restore choices and absolute reset format after restarting the host |
 | 2026-11-24 | Host caps and balances (T035) | Pass | Two no-reset caps displayed remaining vs maximum with no benchmark; the balance rendered as a number |
 | 2026-11-24 | Instance isolation and secret-free views | Pass | Separate OpenChamber data directories; the second instance had no connections or display preference. Snapshot and display storage omitted fixture key and endpoint |
-| 2026-11-24 | Local CA trust | Pass | Quota settings accepted a disposable root PEM; the extension fetched the signed HTTPS custom fixture through the guest service |
 | 2026-11-24 | Keyboard focus (spot check) | Pass | Tab moved from the fixture provider checkbox to its first window. Broader focus order and host-theme contrast are not covered by automated accessibility checks |
-| — | Corporate CA trust | Pending | Needs the real CA bundle |
-| — | Live custom provider | Pending | Local HTTPS fixture passed; live account endpoint not tested |
+| — | Live custom provider | Pending | Requires a live HTTPS endpoint |
 | — | Live Tavily | Pending | Needs a key |
 | — | Live OpenRouter | Pending | Needs a key |
 | — | Live OpenCode Go | Pending | Needs a key |
 | — | Live Codex | Pending | Needs `~/.codex/auth.json` |
 | — | Live OpenCode Zen | Pending | Needs a key/token; verify key acceptance |
 | 2026-11-24 | Remaining/Used display mode | Pass | Extension 0.2.0; settings choice persisted; simulated settings→section round trip switched a 25%-remaining window to 75% used with a 25% benchmark, kept warning color, and showed a cap as 10 / 50; 97 tests, typecheck, build |
-| — | Full quickstart (T053) | Partial | Isolated fixture checks passed; still needs live accounts, corporate CA, and a separate session-switch check |
+| 2026-11-24 | Custom TLS setting removed | Pass | Quota settings has no TLS/CA control; live service returns 404 for GET and PUT `/config`; 97 tests, typecheck, build, package check |
+| — | Full quickstart (T053) | Partial | Isolated fixture checks passed; still needs live accounts and a separate session-switch check |
 
 ## Local service smoke command
 

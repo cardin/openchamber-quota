@@ -44,7 +44,7 @@ Secrets are sent only to the local service and never returned. The section keeps
 | Hidden panel | Collapse the section, wait 2 minutes, reopen | No refresh while collapsed; data refreshes on reopen. |
 | Restart | Restart OpenChamber | Connections and selections persist. |
 | Instance isolation | Use two data directories | Selections and connections do not cross. |
-| CA trust | Set `caBundlePath` to the corporate PEM, connect | Request succeeds with verification on. |
+| No custom TLS | Review Quota settings | No certificate or CA bundle control is offered; HTTPS uses the system trust store. |
 | No secrets | Inspect the snapshot and section storage | No key, token, endpoint, or raw upstream body. |
 
 ## Automated checks
@@ -54,6 +54,6 @@ bun test                 # unit and contract tests
 bun run typecheck        # if configured
 ```
 
-Fixtures and a controlled clock cover windows, benchmarks, caps, balances, errors, and rate limits. The host smoke test covers mount/unload, service round-trip, CA trust, and restart isolation. Live provider calls are manual and not part of CI.
+Fixtures and a controlled clock cover windows, benchmarks, caps, balances, errors, and rate limits. The host smoke test covers mount/unload, service round-trip, and restart isolation. Live provider calls are manual and not part of CI.
 
 See [data-model.md](data-model.md) and [contracts](contracts/service-api.md) for the expected shapes.

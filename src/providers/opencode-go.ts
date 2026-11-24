@@ -48,7 +48,6 @@ export const openCodeGoAdapter: Adapter = {
         "x-opencode-session": "openchamber-quota",
         "User-Agent": "OpenChamber quota display",
       },
-      caBundle: context.caBundle,
       timeoutMs: 15_000,
     };
     // The built-in Usage panel prefers Console's exact used/limit totals over the rounded API meter.

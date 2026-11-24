@@ -3,7 +3,6 @@ import { PROVIDER_KINDS } from "../core/types.ts";
 import type { CredentialStore } from "./credentials.ts";
 import type { SnapshotService } from "./snapshot.ts";
 import { validateSnapshot } from "./snapshot-schema.ts";
-import type { ServiceConfig } from "./config.ts";
 
 export type RouteRequest = {
   method: string;
@@ -22,8 +21,6 @@ export type RouteDeps = {
   snapshot: SnapshotService;
   token: string;
   dataDir: string;
-  config: ServiceConfig;
-  saveConfig: (config: ServiceConfig) => Promise<void>;
 };
 
 const json = (status: number, body: unknown): RouteResponse => ({ status, body });
@@ -186,20 +183,5 @@ export const handleRequest = async (
     const result = await deps.snapshot.testConnection(parts[1]);
     return json(200, result);
   }
-  if (method === "GET" && url.pathname === "/config") {
-    return json(200, { caBundlePath: deps.config.caBundlePath ?? null });
-  }
-  if (method === "PUT" && url.pathname === "/config") {
-    const body = readBody(request.body);
-    if (body === null) return error(400, "bad_request", "Body must be JSON.");
-    const value = body.caBundlePath;
-    if (value !== undefined && value !== null && typeof value !== "string") {
-      return error(400, "bad_request", "caBundlePath must be a string or null.");
-    }
-    deps.config.caBundlePath = typeof value === "string" && value.trim() ? value.trim() : undefined;
-    await deps.saveConfig(deps.config);
-    return json(200, { caBundlePath: deps.config.caBundlePath ?? null });
-  }
-
   return error(404, "not_found", "Unknown route.");
 };
