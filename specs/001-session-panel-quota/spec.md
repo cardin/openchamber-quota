@@ -6,14 +6,14 @@
 
 **Status**: Draft
 
-**Input**: [Living requirements](../../docs/REQUIREMENTS.md). This spec covers REQ 1–5 for the Session Panel quota display, including user-added custom providers. This spec does not amend the living requirements.
+**Input**: [Living requirements](../../docs/REQUIREMENTS.md). This spec covers the amended REQ 1–5: the named provider set, the Work Status section, and user-defined providers. It does not amend the living requirements.
 
 ## Clarifications
 
 ### Session 2026-11-20
 
 - Q: Should users be able to add custom providers in the first Session Panel quota feature, or in a follow-up? → A: Include user-added custom providers in this feature.
-- Q: Where should users define the custom providers they want to see in the quota panel? → A: Prefer both OpenChamber-defined and plugin-defined custom providers if supporting both is simple. If not, bring the choice of one source back for approval.
+- Q: Where should users define the custom providers they want to see in the quota panel? → A: Inside the plugin only. OpenChamber-defined providers cannot be read without a host change.
 - Q: What should the even-use estimate on the quota bar tell users? → A: Show what share of the full quota would remain at this point if it were used evenly across the window.
 - Q: What should the panel show when actual quota remaining and the reset time are known, but the even-use benchmark can’t be calculated? → A: Show the actual quota bar and reset time; omit the benchmark without a note or error.
 - Q: What should the color of the quota bar communicate? → A: Use a danger color below a remaining-quota threshold, regardless of pace; otherwise use a warning color below the even-use benchmark and the default color in other cases.
@@ -21,12 +21,25 @@
 - Q: Which quotas should the Session Panel show before the user has made any selections? → A: Show all available windows from supported providers the user has configured, including any eligible custom providers already set up.
 - Q: Where should the panel remember the user’s provider and window selections? → A: Keep one set of selections per OpenChamber instance, shared across sessions and restored after restarts without syncing to other instances.
 - Q: What should the panel show when it cannot refresh an entire selected provider? → A: Show one provider-level error and no old bars for that provider. Keep other providers visible.
-- Q: If users can define providers in the quota plugin itself, what should they be able to set up? → A: Let users supply connection details for a provider that uses a supported quota format. If there is only one supported format, use it without offering a format selection.
+- Q: If users can define providers in the quota plugin itself, what should they be able to set up? → A: A label, HTTPS endpoint, and key. One fixed quota format, no format picker.
 - Q: When should the panel fetch fresh quota data? → A: Fetch on open, refresh periodically while visible, and offer a manual refresh. Determine the automatic interval during planning based on provider limits.
 - Q: What should users see while a quota refresh is in progress? → A: Keep bars for windows that have not reset. Show loading when there are no previous values or the window has already reset.
 - Q: What should happen when a displayed quota window reaches its reset time between scheduled refreshes? → A: Replace the expired bar with loading and request fresh quota as soon as provider limits allow.
-- Q: After users save their choices, should newly available providers and quota window types appear automatically? → A: No. Offer them in the selector, but keep them out of the quota display until enabled. A new cycle of the same window type keeps its selection.
+- Q: After users save their choices, should newly available providers and quota window types appear automatically? → A: A newly added provider appears automatically with all its current windows. A newly reported window type for an already configured provider is offered in the selector but stays out of the quota display until enabled. A new cycle of the same window type keeps its selection.
 - Q: What should the panel show when there are no quota bars to display, but no request has failed? → A: Show a setup hint if no eligible provider is configured, a selection hint if the user hid everything, or a provider-specific message if a selected provider successfully reports no windows.
+### Session 2026-11-23
+
+- Q: Does an added quota tab in OpenChamber’s right-hand rail satisfy “OpenChamber’s Session Panel”? → A: No. The Session Panel means the Work Status panel beside the chat; a rail tab does not satisfy it.
+- Q: Should quotas be a new section in Work Status or extend the built-in Usage card? → A: A new Quotas section in Work Status.
+- Q: How should the panel get quota data without changing OpenChamber? → A: The plugin owns the data path and supports a named provider set plus user-defined providers. REQ 2 is amended to that set.
+- Q: Should prepaid balances, spend caps, and lifetime limits that have no reset be shown? → A: Spend caps and lifetime limits use a bar because they have a remaining and maximum value; prepaid balances are shown as a number without a bar. Neither is given an invented reset.
+- Q: How should users tell warning and danger apart? → A: By bar color only; no pattern, separate status label, or icon is required.
+- Q: How should the reset time be shown next to a quota bar? → A: Let users choose relative or absolute time, defaulting to relative.
+- Q: Should a cap show used or remaining value? → A: Show remaining: `limit - used` against `limit`.
+- Q: Where do plugin settings live? → A: The sidebar's Pages section; it is the supported configuration surface.
+- Q: Should Tavily's key-usage counter be shown? → A: No. Show Tavily's PAYG usage as a balance when no PAYG limit exists, and as a monthly window when it does. Tavily plan, key-level, and PAYG limits reset at 00:00 UTC on the first of each calendar month.
+- Q: Can users hide non-reporting balances? → A: Yes; Quota settings offers a per-provider `non-reporting balances` checkbox, checked by default; unchecking hides them.
+- Q: How does absolute reset time read at different distances? → A: Within 24 hours: time only. Within 7 days: weekday and time. 7 days or more: date only.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -52,6 +65,7 @@ As an OpenChamber user, I want to see how much quota I have left, an estimate ba
 10. **Given** a refresh is in progress, **when** the panel displays a window with previous values and a future reset time, **then** it keeps that bar visible. For a first fetch or a window that has already reset, it shows loading instead of an old bar until the refresh returns data or an error.
 11. **Given** a displayed window reaches its reset time before the next scheduled refresh, **when** the reset time arrives, **then** loading replaces the expired bar and the panel refreshes the provider at the earliest time its limits allow.
 12. **Given** a selected provider, **when** a successful response reports no quota windows, **then** the panel shows a message for that provider, not a loading state or an error. Other providers remain visible.
+13. **Given** a known reset time, **when** the panel first shows it, **then** the relative time is shown by default. **When** the user switches the reset-time display to absolute, **then** the format adapts to distance: time only within 24 hours, weekday and time within 7 days, and date only at 7 or more days.
 
 ### User Story 2 - Choose Providers and Windows to Display (Priority: P2)
 
@@ -67,24 +81,37 @@ As an OpenChamber user, I want to choose which providers and quota windows appea
 2. **Given** a selected provider with two quota windows with complete data and distinct reset times, **when** the user selects both windows, **then** each window shows its own colored bar, estimate, and reset time. **When** the user deselects one, **then** only the other remains visible.
 3. **Given** no saved selections and a mix of configured and unconfigured providers, **when** the user first opens the panel, **then** it shows all available windows from supported configured providers, including any eligible custom providers already set up. It does not list unconfigured providers in the quota display.
 4. **Given** the user has changed a provider or window selection, **when** they switch sessions or restart the same OpenChamber instance, **then** their selections are restored; another instance's selections are unaffected. An explicitly saved empty selection does not revert to first-use defaults.
-5. **Given** the user has saved selections, **when** a newly configured eligible provider or a newly reported window type becomes available, **then** it is offered in the selector but does not appear in the quota display until enabled. Resetting an already selected window does not require the user to select it again.
+5. **Given** the user has saved selections, **when** a newly configured eligible provider becomes available, **then** it appears automatically with all its current windows. **When** a newly reported window type appears for an already configured provider, it is offered in the selector but does not appear until enabled. Resetting an already selected window does not require the user to select it again.
 6. **Given** no eligible provider is configured, **when** the user opens the panel, **then** it shows a setup hint. If eligible providers are configured but the user has hidden all providers or windows, it instead shows a hint to change the selection.
 
-### User Story 3 - See Supported Providers (Priority: P2)
+### User Story 3 - See Balances and Caps That Do Not Reset (Priority: P2)
 
-As an OpenChamber user, I want providers with quota data to be available, including providers I add myself, so I can see quotas for the providers I use.
+As an OpenChamber user, I want to see spend caps, lifetime limits, and prepaid balances even when they do not reset, so I know what room I have left.
 
-**Why this priority**: Coverage applies to every eligible model provider in the latest OpenChamber version; a first-provider milestone does not satisfy the coverage requirement.
+**Why this priority**: Some supported providers expose quota-like values without a reset window. Leaving them out would hide useful limits and exclude providers that only report a balance.
 
-**Independent Test**: Compare the providers supported by the plugin with the model providers and quota availability in the latest OpenChamber version. Check that each eligible provider can be selected and displayed.
+**Independent Test**: Display one spend cap, one lifetime limit, and one prepaid balance from synthetic data. Check that caps use a bar without a reset or benchmark, and the balance is a number only.
 
 **Acceptance Scenarios**:
 
-1. **Given** a model provider in the latest OpenChamber version with a quota window that has complete data, **when** the user selects that provider and window to show, **then** the Session Panel displays its colored bar, even-use estimate, and reset time.
+1. **Given** a spend cap or lifetime limit with a current value and a known maximum but no reset time, **when** it is displayed, **then** it shows a bar for remaining versus maximum, no reset time, and no even-use benchmark.
+2. **Given** a prepaid balance, **when** it is displayed, **then** it shows as a number without a bar, benchmark, or reset time.
+
+### User Story 4 - See Supported Providers (Priority: P2)
+
+As an OpenChamber user, I want providers with quota data to be available, including providers I add myself, so I can see quotas for the providers I use.
+
+**Why this priority**: Coverage applies to the named provider set in REQ 2; a first-provider milestone does not satisfy the coverage requirement.
+
+**Independent Test**: Compare the providers supported by the plugin with the REQ 2 list. Check that each named provider can be selected and displayed.
+
+**Acceptance Scenarios**:
+
+1. **Given** a provider named in REQ 2 with a quota window that has complete data, **when** the user selects that provider and window to show, **then** the Session Panel displays its colored bar, even-use estimate, and reset time.
 2. **Given** a provider that does not expose quota data, **when** the user reviews supported providers, **then** that provider is not offered for quota display.
-3. **Given** an optional external provider is included, **when** the user selects it, **then** its selected windows follow the same display and error rules as any other supported provider. Omitting Tavily does not fail acceptance.
+3. **Given** Tavily is named in REQ 2, **when** the user connects it and selects a window, **then** its selected windows follow the same display and error rules as a model provider.
 4. **Given** an eligible custom provider with usable quota data, **when** the user includes it and selects it for display, **then** its selected windows follow the same display and error rules as other supported providers.
-5. **Given** plugin-defined providers are supported, **when** the user supplies connection details for a provider with a supported quota format, **then** they can select that format if more than one is supported. If only one format is supported, the plugin uses it without offering a format selection.
+5. **Given** a custom provider uses the supported format, **when** the user supplies a label, HTTPS endpoint, and key, **then** the plugin adds it without a format picker.
 
 ### Edge Cases
 
@@ -92,23 +119,27 @@ As an OpenChamber user, I want providers with quota data to be available, includ
 - Insufficient timing information for the even-use benchmark alone does not replace the actual quota bar with an error and is not shown as a zero benchmark.
 - A window is not shown when its provider is hidden, even if that window was selected.
 - A plugin-defined provider with an unsupported quota format cannot be added for quota display. User-defined mappings for unfamiliar formats are out of scope.
+- A cap-like value with a current value but no maximum is shown as a balance number, not a bar.
+- A resetting window whose reset time is missing still follows the error rule in FR-003; the cap and balance rules do not excuse a missing reset on a resetting window.
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001 (REQ 3)**: The quota display MUST appear in OpenChamber's Session Panel.
-- **FR-002 (REQ 1)**: Each displayed window MUST use a colored bar to distinguish actual quota remaining from the even-use benchmark on the same scale, and MUST show when the window resets. The benchmark is the fraction of the full window still remaining: 100% at the start, 50% halfway through, and 0% at reset. If only the benchmark cannot be calculated, show the actual quota bar and reset time without the benchmark or a note. FR-003 applies when actual quota or reset time is unavailable.
+- **FR-001 (REQ 3)**: The quota display MUST appear as a new Quotas section in OpenChamber's Work Status panel beside the chat. A rail tab or a separate panel MUST NOT substitute for it. The section MUST load only while the panel is visible and the section is expanded.
+- **FR-002 (REQ 1)**: Each displayed resetting window MUST use a colored bar to distinguish actual quota remaining from the even-use benchmark on the same scale, and MUST show when the window resets. The benchmark is the fraction of the full window still remaining: 100% at the start, 50% halfway through, and 0% at reset. If only the benchmark cannot be calculated, show the actual quota bar and reset time without the benchmark or a note. FR-003 applies when actual quota or reset time is unavailable.
 - **FR-003 (REQ 1)**: If remaining quota or reset time is unavailable for an individual window, an error message MUST replace that window's bar without replacing healthy windows' bars. If loading or refreshing an entire selected provider fails, the panel MUST show one error for that provider and no old bars from it, without hiding healthy providers.
-- **FR-004 (REQ 2)**: The plugin MUST support every model provider in the latest OpenChamber version that exposes quota data and MUST exclude providers that do not expose quota data. External providers that expose quota data, including Tavily, are optional.
-- **FR-005 (REQ 4)**: Users MUST be able to choose which supported providers appear and, for each provider with multiple windows, which windows appear. Preserve one set of selections per OpenChamber instance across sessions and restarts. Before any selections are saved, show all available windows from supported configured providers, including eligible custom providers already set up. A saved empty selection is not first use.
-- **FR-006 (REQ 5)**: Users MUST be able to include their own custom providers that expose quota data and select them for display. Both OpenChamber-defined and plugin-defined providers are preferred if supporting both is simple. If planning finds that supporting both would materially increase complexity, get approval on which source to support first. The setup details remain open.
+- **FR-004 (REQ 2)**: The plugin MUST support user-defined providers plus OpenAI Codex, OpenCode Go, OpenRouter, Tavily, and OpenCode Zen. It MUST NOT read OpenChamber's credential store. Providers outside this list are not required until added to REQ 2.
+- **FR-005 (REQ 4)**: Users MUST be able to choose which supported providers appear, for each provider with multiple windows, which windows appear, and whether a provider's non-reporting balances are hidden. Preserve one set of selections per OpenChamber instance across sessions and restarts. Before any selections are saved, show all available windows from supported configured providers, including eligible custom providers already set up. A saved empty selection is not first use.
+- **FR-006 (REQ 5)**: Users MUST be able to add, update, and remove their own custom providers inside the plugin and select them for display. OpenChamber-defined providers are out of scope.
 - **FR-007 (REQ 1)**: Use the danger color if actual quota remaining is strictly below the cutoff, regardless of the benchmark. The cutoff defaults to 10% and users can change it through one setting that applies to all windows. Otherwise, use the warning color if the benchmark is known and actual quota remaining is strictly below it; use the default color otherwise.
-- **FR-008 (REQ 5)**: If plugin-defined providers are supported, users MUST be able to supply connection details for their own providers using a supported quota format. Offer a format selection only when more than one format is supported.
+- **FR-008 (REQ 5)**: Users MUST supply a label, an HTTPS endpoint, and a key for a custom provider. The plugin uses the one supported quota format without offering a format picker.
 - **FR-009 (REQ 1)**: Fetch quota for selected providers when the panel opens, periodically while it is visible, and when the user requests a manual refresh. When a displayed window reaches reset, refresh that provider as soon as its limits allow. Verify provider limits during planning to set the automatic interval.
 - **FR-010 (REQ 1)**: While a fetch is in progress, keep existing bars only for windows whose reset time has not arrived. Show loading for a first fetch or a window whose reset time has arrived, including while waiting for provider limits to allow a fetch. When the fetch finishes, show the new values, the applicable error, or the empty-state message under FR-012.
-- **FR-011 (REQ 4)**: After selections are saved, make eligible providers and window types that become available for the first time selectable but do not add them to the quota display until the user enables them. Preserve a window type's selection across reset cycles.
+- **FR-011 (REQ 4)**: After selections are saved, a newly added eligible provider MUST appear automatically with all its current windows. A newly reported window type for an already configured provider MUST be selectable but MUST NOT appear until the user enables it. Preserve a window type's selection across reset cycles.
 - **FR-012 (REQ 1/4)**: Show a setup hint when no eligible providers are configured, a selection hint when the user's selections hide all quotas, and a provider-specific message when a successful response from a selected provider reports no windows. A failed response follows FR-003, not the empty-state rule.
+- **FR-013 (REQ 2)**: Show a spend cap or lifetime limit that has a current value and a known maximum as a bar of remaining versus maximum (`limit - used` against `limit`), without a reset time or even-use benchmark. Show a prepaid balance as a number without a bar, benchmark, or reset time. Never invent a reset for either. A provider that exposes only values covered by this requirement remains eligible under FR-004.
+- **FR-014 (REQ 1)**: Show reset times as relative time by default. Provide one instance-scoped setting to switch to absolute time. In absolute mode, a reset within 24 hours shows only the time; a reset within 7 days shows the weekday and time; a reset 7 or more days away shows the date only. The setting follows the same persistence rules as display selections.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -116,7 +147,10 @@ As an OpenChamber user, I want providers with quota data to be available, includ
 - **Quota window**: The current cycle of a quota allocation, with remaining quota, an even-use estimate, and reset time when available.
 - **Window type**: A recurring quota allocation from a provider, such as a daily window; its selection applies to each reset cycle.
 - **Display selection**: The providers and, where applicable, window types the user has chosen to show, scoped to one OpenChamber instance.
+- **Display preference**: An instance-scoped display choice, including the danger cutoff and whether reset times are relative or absolute.
 - **Quota format**: A supported way for a provider to report its quota windows and values.
+- **Cap**: A non-resetting spend or usage limit with a remaining value and a known maximum.
+- **Prepaid balance**: A non-resetting amount that runs down as the user spends it.
 
 ## Success Criteria *(mandatory)*
 
@@ -124,22 +158,26 @@ As an OpenChamber user, I want providers with quota data to be available, includ
 
 - **SC-001**: In both the nonzero and zero quota scenarios, the colored bar shows the correct actual quota and a distinguishable 50% even-use benchmark halfway through the window. The displayed reset time matches the known reset time.
 - **SC-002**: Verify window-level errors for missing quota or reset time, one provider-level error and no old bars for a whole-provider failure, and an unchanged actual quota bar and reset time when only the benchmark is unavailable. Unaffected windows and providers remain visible in all cases.
-- **SC-003**: With at least two supported providers and at least two windows for one provider, verify first-use defaults, saved selections after switching sessions and restarting the same instance, and that new providers or window types require selection while ordinary resets do not.
-- **SC-004**: 100% of eligible model providers in the latest OpenChamber version are supported; zero providers that do not expose quota data are offered. Verification records the version and date checked without changing the coverage target.
-- **SC-005**: For each supported custom provider source, a user can add one eligible provider and see its selected windows in the Session Panel. If plugin-defined providers are supported, verify that format selection is absent when one format is supported and available when more than one is supported.
-- **SC-006**: Verify color below, at, and above the default 10% cutoff, with the benchmark above, equal to, below, or unavailable relative to actual quota. Verify that changing the cutoff applies to all windows, and that danger takes precedence over warning.
+- **SC-003**: With at least two supported providers and at least two windows for one provider, verify first-use defaults, saved selections after switching sessions and restarting the same instance, that a newly added provider appears with its current windows, and that a new window type for an existing provider requires selection while ordinary resets do not.
+- **SC-004**: 100% of the providers named in REQ 2 are supported; no unlisted provider is presented as built-in. Verification records the plugin version and the authentication method tested.
+- **SC-005**: A user can add one custom provider, see its selected windows, update its label or key, and remove it.
+- **SC-006**: Verify color below, at, and above the default 10% cutoff, with the benchmark above, equal to, below, or unavailable relative to actual quota. Verify that changing the cutoff applies to all windows and that danger takes precedence over warning.
 - **SC-007**: Verify refresh on open, periodically while visible, manually, and at reset subject to provider limits. Verify that automatic refresh stops while the panel is hidden, unexpired bars remain during refresh, and expired bars are replaced by loading even when provider limits delay the fetch.
 - **SC-008**: Verify distinct outcomes for no eligible providers configured, all quotas hidden by selection, and a selected provider reporting no windows. A provider failure remains an error, not an empty state.
+- **SC-009**: Verify that a spend cap and a lifetime limit each show a remaining-versus-maximum bar with no reset or benchmark, and that a prepaid balance shows a number with no bar. Verify that neither display invents a reset or benchmark.
+- **SC-010**: Verify relative reset time on first use, the absolute 24-hour/weekday/date formats after the user switches the setting, and that the choice survives a session switch and restart on the same instance.
 
 ## Assumptions
 
-- Planning must confirm that the Session Panel can host the display and inventory provider eligibility for the latest OpenChamber version. If the evidence conflicts with the approved requirements, bring the conflict back for review.
-- Living REQ 1 lists the even-use estimate for each displayed window but does not specify what to show if it alone is unavailable. Reconcile the agreed fallback in FR-002 with the living requirement before implementing it.
+- Planning must confirm the Work Status section can be hosted on the supported clients and that every REQ 2 provider can be connected and read. If the evidence conflicts with the approved requirements, bring the conflict back for review.
+- Living REQ 1 was amended on 2026-11-23 to define the even-use estimate, allow omitting it when only window timing is missing, and cover non-resetting caps and balances. FR-002 and FR-013 now follow it.
+- Living REQ 2 was amended on 2026-11-23 to a named provider set: custom providers, Codex, OpenCode Go, OpenRouter, Tavily, and OpenCode Zen. FR-004 and SC-004 follow it.
+- OpenChamber-defined custom providers are out of scope. Reading them would require host data the plugin cannot access.
 
-## Open Decisions
+## Resolved Decisions
 
-- **REQ 1 — Refresh and failure states:** Verify provider limits to set the automatic interval and decide whether recovery needs anything beyond manual and periodic refresh.
-- **REQ 1 — Display details:** Decide whether reset time is absolute, relative, or both; how quota values are rounded and labeled; and how users distinguish warning and danger without relying on color.
-- **REQ 2/3 — Host integration and provider coverage:** Verify which OpenChamber release defines the eligibility check, whether it includes configured providers and multiple accounts, what counts as exposed quota data when only some fields are available, and whether the Session Panel can host the feature. Bring any conflict with the living requirements back for review.
-- **REQ 4 — Selection behavior:** Decide whether saved choices are retained for providers and window types that are removed and later return.
-- **REQ 5 — Custom provider setup:** Planning must verify the cost and constraints of supporting both sources and identify the quota formats the plugin can support. Clarify the connection details and credentials each source needs, how users update or remove a provider, how users recognize failed setup, and how to handle duplicates if both sources are supported.
+- **REQ 1 — Refresh and failure states:** Resolved. The section loads the snapshot every 5 seconds, attempts a refresh on mount, every 60 seconds, at reset, and manually. The service enforces provider limits and schedules a retry when an attempt is blocked. Host timing remains a verification item.
+- **REQ 1 — Display details:** Resolved. Rows show remaining percentage and reset time; relative time is the default. The countdown refreshes from the snapshot poll.
+- **REQ 2/3 — Host integration and provider coverage:** Resolved for OpenChamber 2.8.0. A local guest service owns provider I/O and credentials. Live Zen key support, Codex token lifetime, CA trust, and load/unload timing remain verification items.
+- **REQ 4 — Selection behavior:** Resolved. Removed providers retain their window selection. A newly added provider is auto-enabled with its current windows; a newly reported window type stays opt-in.
+- **REQ 5 — Custom provider setup:** Resolved. Add, edit, and remove are in Quota settings; custom labels are unique; one supported format, no mappings.

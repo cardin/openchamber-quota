@@ -1,48 +1,109 @@
 # Implementation Plan: Session Panel Quota Display
 
-**Branch**: `001-session-panel-quota` | **Date**: 2026-11-20 | **Spec**: [spec.md](spec.md)
+**Branch**: `001-session-panel-quota` | **Date**: 2026-11-23 | **Spec**: [spec.md](spec.md)
 
 **Input**: [Living requirements, REQ 1–5](../../docs/REQUIREMENTS.md).
 
-**Status**: Phase 0 findings recorded. **ERROR — Phase 1 entry gate not met.**
+**Status**: Implementation is present and verified with an isolated OpenChamber 2.8.0 host and local HTTPS fixture. Live-account and corporate CA verification remain pending.
 
 ## Summary
 
-Display quota remaining, the even-use benchmark, and reset time in OpenChamber's Session Panel. OpenChamber v2.7.3 can mount a guest tab in its right rail, but the guest SDK exposes neither a reader for built-in quota data nor a panel visibility event. An extension-only implementation has not been shown to meet the scope. See [Phase 0 research](research.md) for pinned source, alternatives, and gaps.
+Add a **Quotas** section to OpenChamber's Work Status panel. The section is display-only: quota windows, even-use benchmarks, reset times, caps, and balances for the REQ 2 providers, plus a refresh icon. A newly added provider is enabled automatically with its current windows; a newly reported window type for an existing provider stays opt-in. Caps show the remaining value against their maximum. Configuration lives in a **Quota settings** full-screen page opened from the sidebar's **Pages** section. Because OpenChamber exposes no quota data to this extension and will not be changed, a local guest service owns the provider requests and credentials.
 
 ## Technical Context
 
-- **Language and runtime:** TypeScript proposed. Pin OpenChamber v2.7.3 and bundled OpenCode 2.3.2 for the first integration test; do not claim backward compatibility until verified.
-- **Dependencies and target:** Native OpenChamber panel and server-side quota access on web and Electron. A guest tab can use SDK v1; a supported host data and visibility bridge is not yet available. Confirm whether REQ 3 permits that tab or requires an existing first-party panel. Mobile and VS Code need separate scope review.
-- **Storage:** Use server-owned instance storage for guest display preferences if the guest path is chosen. Distinguish unsaved defaults from a saved empty selection. Keep credentials and raw provider data out of display preferences and client payloads.
-- **Testing:** Use deterministic provider fixtures and a controlled clock for normalization, state transitions, and scheduling. Use the pinned host to verify actual mount, visibility, authorized access, TLS trust, and restart/isolation. No runtime tests were run in Phase 0.
-- **Performance and constraints:** No polling when hidden, coalesce concurrent refreshes per provider/account, and obey provider minimum intervals and backoff. The stock host's three-minute cadence is precedent, not proof of safe limits. Preserve hostname and CA verification in the process making requests.
-- **Scope:** Account for every eligible model provider in the latest OpenChamber release and support user-added providers under REQ 5. The 28 built-in quota route IDs at v2.7.3 are a starting inventory, not proof of parity. Tavily remains optional.
+- **Language and runtime:** TypeScript. The section is a built HTML/JS entry loaded by `contributes.statusSection`; the service is a local process using the host runtime (`node:http`, `node:https`).
+- **Surface:** Work Status section, confirmed by the probe. The host loads it only while the panel is visible and the section is expanded; no extension-side visibility bridge is required.
+- **Pages surface:** A `contributes.page` full-screen page from the sidebar Pages, verified in OpenChamber 2.8.0 without a host change.
+- **Data path:** `host.serviceRequest` → local service. The service exposes a small JSON API, holds provider credentials, enforces rate limits, and returns a secret-free snapshot.
+- **Storage:** Display selections and preferences in instance-scoped `host.storage`; provider credentials in the service data directory with `0600`, atomic writes, and no logging. No credentials in the frame, responses, or preferences.
+- **Testing:** Deterministic fixtures and a controlled clock for normalization, benchmarks, colors, state transitions, and scheduling. Contract tests for the service API and custom format. Host smoke test for mount/unload, service round-trip, CA trust, and two-instance isolation. Live providers are manually tested and excluded from CI.
+- **Target platform:** OpenChamber v2.7.3 or later with status sections; web, desktop, and phone. VS Code loads no extensions.
+- **Performance:** One in-flight request per provider/account, coalesced. Service minimum intervals: Tavily 10 minutes (10 requests/10 minutes endpoint limit); others 5 minutes unless the provider documents otherwise. Manual refresh is subject to the same limits. No timer runs while the section is unloaded.
+- **Security:** HTTPS only; redirects rejected; TLS verification preserved; configurable CA bundle for the corporate root; custom endpoints reject credentials in URLs and never return secrets.
+- **Scope:** REQ 2 set: custom, Codex, OpenCode Go, OpenRouter, Tavily, OpenCode Zen. Key/token paths first; Codex uses an imported Codex CLI login. Zen falls back to a clear auth error if its API key cannot read usage.
 
 ## Constitution Check
 
-- **Pre-research: Pass.** The [Spec Kit constitution](../../.specify/memory/constitution.md) is an unratified template. Apply [repository governance](../../AGENTS.md): living requirements are authoritative, changes need approval, and verification must be bounded and traceable.
-- **Phase 1 entry: Fail.** The host path is not selected, the quota and visibility integration is not verified, and the benchmark-only fallback in FR-002 must be reconciled with living REQ 1. The custom-provider scope and provider eligibility cannot be signed off on the available evidence.
-- **Post-design: Not run.** No design was ratified or created past the failed gate. No release or implementation readiness is implied.
-
-## Gates to Resume
-
-1. **REQ 3 / FR-009 — Choose the host path.** Recommended: if a right-rail tab counts, plan a small OpenChamber host change to expose sanitized quota reads and explicit panel visibility to the guest. If an existing first-party panel is required, plan a native host feature. Do not create an upstream issue, PR, or fork as part of this plan.
-2. **REQ 1 — Reconcile data behavior.** Seek approval to document the benchmark-only fallback in living REQ 1. Decide whether non-recurring caps, balances, and spend-only rows are in scope. Do not infer an absent reset or full duration.
-3. **REQ 2 / 5 — Prove data and coverage.** Run a small isolated smoke test with the chosen host path, one provider fixture, and a test clock. Cross-check the release's model catalog against the quota registry, credential and plan variants, rate limits, freshness and window semantics. Prove both custom-provider sources can use one normalization and transport boundary before committing to both; if they cannot, seek approval for one.
-4. **REQ 4 — Prove persistence.** Check saved selections across sessions and restart, two-instance isolation, and stable window identity through reset. Resolve whether saved choices return when a removed provider or window type reappears.
-
-Once those gates are closed, finish Phase 1 with the normalized provider/window and preference model, the approved host UI/data/visibility contracts, and a runnable host verification quickstart. Recheck the constitution and living-doc alignment before generating tasks.
+- **Pre-research: Pass.** The [Spec Kit constitution](../../.specify/memory/constitution.md) is an unratified template. Apply [repository governance](../../AGENTS.md): living requirements are authoritative, changes need approval, and verification is bounded and traceable.
+- **Phase 1 entry: Pass.** Surface, scope, and data path are decided. The living requirements were amended for REQ 1 and REQ 2 with approval.
+- **Post-design: Pass with residual risks.** The local service duplicates some provider logic because the host exposes no read. That complexity is justified by the no-host-change constraint. The remaining risks are provider auth changes, CA trust in the service process, and unproven unload timing.
 
 ## Project Structure
 
 ### Documentation (this feature)
 
-- `plan.md` — this plan and blocking gates.
-- [`research.md`](research.md) — Phase 0 evidence.
-- `data-model.md`, `contracts/`, `quickstart.md` — withheld by the failed Phase 1 entry gate.
-- `tasks.md` — not generated by this command.
+```text
+specs/001-session-panel-quota/
+├── plan.md
+├── research.md
+├── data-model.md
+├── quickstart.md
+├── contracts/
+│   ├── service-api.md
+│   ├── quota-snapshot.schema.json
+│   ├── custom-provider-v1.md
+│   └── custom-provider-v1.schema.json
+└── tasks.md              # generated by /speckit.tasks
+```
 
 ### Source Code (repository root)
 
-No application source or tests exist yet. Keep host mounting and visibility, normalization and refresh, and credential-bearing provider I/O separate. Select package entry points only after the host path is approved.
+```text
+src/
+├── section/
+│   ├── index.html
+│   ├── style.css
+│   ├── main.ts
+│   ├── host.ts
+│   ├── preferences.ts
+│   ├── refresh.ts
+│   └── view/
+├── service/
+│   ├── main.ts
+│   ├── routes.ts
+│   ├── credentials.ts
+│   ├── scheduler.ts
+│   ├── snapshot.ts
+│   ├── config.ts
+│   ├── http.ts
+│   └── tls.ts
+├── providers/
+│   ├── types.ts
+│   ├── parse.ts
+│   ├── index.ts
+│   ├── custom.ts
+│   ├── codex.ts
+│   ├── opencode-go.ts
+│   ├── opencode-zen.ts
+│   ├── openrouter.ts
+│   └── tavily.ts
+├── settings/             # Full-screen Pages entry: connections, selection, CA
+│   ├── index.html
+│   ├── style.css
+│   └── main.ts
+└── core/
+    ├── types.ts
+    └── normalize.ts
+tests/
+├── unit/
+├── contract/
+├── integration/
+└── fixtures/
+```
+
+The earlier status probe has been removed from the tree; its results are recorded in [research.md](research.md).
+
+## Resolved Decisions and Residual Risks
+
+1. **REQ 3 surface — resolved.** Work Status section via `contributes.statusSection`; a rail tab was rejected.
+2. **REQ 1 behavior — resolved.** Living REQ 1 defines the estimate, the timing-only fallback, caps, and balances.
+3. **REQ 2 data path — resolved.** Local service, no host change. Provider adapters:
+   - Custom: user endpoint + key, one versioned format.
+   - Tavily: `GET https://api.tavily.com/usage`, Bearer key; plan, key, and PAYG limits reset at 00:00 UTC on the first of each month. PAYG usage without a limit is a balance; key usage without a limit is hidden.
+   - OpenRouter: `GET https://openrouter.ai/api/v1/key`, Bearer key; percentage or spend.
+   - OpenCode Go: `GET https://opencode.ai/zen/go/v1/usage`, Bearer key; rolling/weekly/monthly windows.
+   - OpenCode Zen: Console `/usage/models` and `/budgets/service-accounts/status`, Bearer key or token; verify the API-key path.
+   - Codex: `GET https://chatgpt.com/backend-api/wham/usage`, Bearer access token from an imported Codex CLI login; no OAuth flow in the first release.
+4. **REQ 4 persistence — designed.** Instance-scoped `host.storage`; a newly added provider is auto-enabled with its current windows while new window types stay opt-in. Credentials stay in the service data directory.
+5. **Residual risks.** The service round-trip, collapse/unload, restart, two-instance isolation, and local CA trust passed in the isolated host; see [verification.md](verification.md). Live accounts (including Codex token expiry and Zen API-key acceptance), the corporate CA, and Windows data-directory permissions still need verification.

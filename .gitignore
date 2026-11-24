@@ -1,1 +1,13 @@
 .opencode/
+node_modules/
+dist/
+build/
+*.tmp
+*.swp
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.*

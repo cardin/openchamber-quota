@@ -14,24 +14,24 @@
 ## Requirement Completeness
 
 - [x] No [NEEDS CLARIFICATION] markers remain
-- [ ] Requirements are testable and unambiguous
+- [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
-- [ ] All acceptance scenarios are defined
+- [x] All acceptance scenarios are defined
 - [x] Edge cases are identified
-- [ ] Scope is clearly bounded
+- [x] Scope is clearly bounded
 - [x] Dependencies and assumptions identified
 
 ## Feature Readiness
 
-- [ ] All functional requirements have clear acceptance criteria
+- [x] All functional requirements have clear acceptance criteria
 - [x] User scenarios cover primary flows
-- [ ] Feature meets measurable outcomes defined in Success Criteria
+- [x] Feature meets measurable outcomes defined in Success Criteria
 - [x] No implementation details leak into specification
 
 ## Notes
 
-- This review checks the specification, not a running feature. Stories 1–3 and SC-001–004 cover the display and selection flows in [REQ 1–4](../../../docs/REQUIREMENTS.md), including the revised REQ 1.
-- **REQ 1:** FR-002 and SC-001 are not fully verifiable until the estimate's meaning is agreed. Add acceptance checks for the expected estimate, the outcome when only the estimate is unavailable, and any meanings assigned to bar colors.
-- **REQ 5:** Scope is not final until the custom-provider workflow is assigned to this feature or a follow-up. A follow-up is recommended, not decided. If REQ 5 is included here, add a user story and acceptance criteria.
-- See [Open Decisions](../spec.md#open-decisions) for the questions to resolve in `/speckit.clarify`. Existing open behaviors under **Assumptions** are not acceptance criteria. Session Panel integration and eligible-provider coverage still need verification during planning.
+- Reviewed 2026-11-23 against the amended [REQ 1–5](../../../docs/REQUIREMENTS.md) and the approved named provider set.
+- The Work Status section, provider list, custom-provider format, and data path are bounded. Planning owns the service API and provider adapters.
+- Residual implementation risks are tracked in [plan.md](../plan.md#resolved-decisions-and-residual-risks): Codex token lifetime, Zen API-key acceptance, CA trust, and provider rate limits.
+- The spec is implementation-ready; this checklist does not assert that the feature works.
