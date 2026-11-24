@@ -1,53 +1,60 @@
-# OpenChamber Quota Display
+# Quota Display for OpenChamber
 
-A Work Status section for OpenChamber that shows quota remaining or used, the even-use benchmark, reset times, caps, and balances.
+See how much quota you have left, how fast you are using it, and when it resets without leaving your session.
 
-## How it works
+<img src="docs/assets/quotas-panel.png" width="360" alt="The Quotas section in OpenChamber's Work Status panel">
 
-- **Section** (`src/section/`): a `contributes.statusSection` entry. It renders the snapshot and stores only display preferences in instance-scoped `host.storage`.
-- **Service** (`src/service/`): a local process started by OpenChamber. It owns provider credentials, fetches quota APIs, enforces minimum intervals, and returns a secret-free snapshot. The section calls it through `host.serviceRequest`.
-- **No OpenChamber changes.** The plugin never reads OpenChamber's credential store.
+## Why use it
 
-## Providers
+- Keep Tavily, OpenRouter, and OpenCode Go quotas in one compact Work Status section.
+- See remaining or used quota, the even-use benchmark, reset times, caps, and balances.
+- Spot trouble early with warning and danger colours.
+- Choose the providers and windows you care about, and hide rows you do not need.
+- Keys stay in the extension's local service; the plugin does not read OpenChamber's credential store.
 
-Custom providers, Tavily (plan, key, and PAYG limits reset monthly), OpenRouter, OpenCode Go, OpenAI / Codex, and OpenCode Zen. OpenAI / Codex imports `~/.codex/auth.json` on user action; the others use a key entered in the section.
+## Install
 
-## Build and install
+Requires OpenChamber 2.8.0 or later on web or desktop. VS Code does not load extensions.
 
-```bash
-bun install
-bun run build
-```
+1. Open **Settings → Extensions → Add extension**.
+2. Select this folder or a ZIP of it.
+3. Approve the local service.
+4. Open **Work Status** beside the chat. The **Quotas** section is there; use **Choose sections** if it is hidden.
 
-Install this folder from **Settings → Extensions → Install from folder**, then open **Work Status**. The **Quotas** section appears there, not in the right rail.
+## Configure
 
-## Configuration
+Open **Quota settings** from the sidebar's **Pages** section.
 
-Open **Quota settings** from the sidebar's **Pages** section. The Pages entry is the supported configuration surface in OpenChamber 2.8.0.
+1. Add a provider and paste its API key. Use the eye button in the key field to check what you pasted, then **Test** the connection.
+2. Choose the providers and windows to show. A new provider appears automatically; a new window type stays off until you enable it.
+3. Pick **Remaining** (default) or **Used**, set the danger cutoff, and choose relative or absolute reset times.
 
-- Add or remove providers and test a connection. Use the eye button inside the key field to reveal a pasted key; it stays masked by default.
-- View non-resetting balances such as Tavily PAYG usage, with a per-provider option to hide them.
-- Choose which providers and windows appear in the panel.
-- Under **Display → Show quota as**, choose **Remaining** (default) or **Used** for windows and caps.
-- Set the danger cutoff and relative/absolute reset time.
+Codex, Zen, and custom provider setup are hidden in this release while OAuth or a live endpoint is verified. Existing connections remain supported.
 
-Provider requests use HTTPS with the system trust store.
+## Supported providers
 
-The Work Status section is display-only. Its header has a single refresh icon.
+| Provider | Sign-in | What you get |
+| --- | --- | --- |
+| Tavily | API key | Plan, key, and PAYG limits, plus PAYG balance |
+| OpenRouter | API key | Credit limit and monthly spend |
+| OpenCode Go | API key | 5-hour, weekly, and monthly windows |
+
+Tavily, OpenRouter, and OpenCode Go are verified with live keys. Codex, Zen, and custom adapters remain, but their setup is hidden until OAuth or a live endpoint can be verified.
+
+## Notes
+
+- **Quotas** is display-only. Refresh it from the section header; it also refreshes while visible and after a window resets.
+- The extension runs a small local service for provider requests and credentials. It never returns raw keys to the panel.
+- Full requirements, design, interfaces, and test notes are in [`docs/README.md`](docs/README.md).
 
 ## Development
 
+Building and testing from source requires Bun 1.4 or later.
+
 ```bash
+bun install
 bun run typecheck
 bun test
+bun run test:a11y
 bun run build
 ```
-
-Living requirements, design, interfaces, decisions, and the test plan are in `docs/`. The feature working record and reconciliation manifest are in `specs/001-session-panel-quota/`.
-
-## Known gaps
-
-- Host checks are manual; the section mounts and renders live provider data in OpenChamber.
-- Live provider checks are manual; Tavily, OpenRouter, and OpenCode Go are verified. See the quickstart.
-- Custom-endpoint, Zen API-key, and OpenAI / Codex token checks need real-account verification.
-- The service stores credentials in a `0600` file on POSIX and the user ACL on Windows; no encryption in this release.

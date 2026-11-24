@@ -7742,6 +7742,7 @@ import os2 from "node:os";
 import path4 from "node:path";
 
 // src/service/credentials.ts
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 var EMPTY = { version: 1, connections: [] };
@@ -7780,7 +7781,7 @@ class CredentialStore {
   }
   async save() {
     await mkdir(this.dataDir, { recursive: true });
-    const temp = `${this.file}.${process.pid}.tmp`;
+    const temp = `${this.file}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(temp, JSON.stringify(this.data, null, 2), { mode: 384 });
     await rename(temp, this.file);
   }
@@ -7915,6 +7916,7 @@ class Scheduler {
 }
 
 // src/service/snapshot.ts
+import { randomUUID as randomUUID2 } from "node:crypto";
 import { mkdir as mkdir2, readFile as readFile3, rename as rename2, writeFile as writeFile2 } from "node:fs/promises";
 import path3 from "node:path";
 
@@ -8181,15 +8183,22 @@ var readCodexLogin = async (codexHome) => {
     return null;
   }
 };
-var parseWindow2 = (value, index) => {
+var resetAtFor = (entry, now) => {
+  const direct = toIso(entry.reset_at);
+  if (direct)
+    return direct;
+  const after = asNumber(entry.reset_after_seconds);
+  return after !== null && after > 0 ? new Date(now + after * 1000).toISOString() : null;
+};
+var parseWindow2 = (value, index, now) => {
   const entry = asRecord(value);
   if (!entry)
     return null;
   const used = asNumber(entry.used_percent);
-  const resetAt = toIso(entry.reset_at);
+  const resetAt = resetAtFor(entry, now);
   const seconds = asNumber(entry.limit_window_seconds);
   const window = {
-    id: `window-${seconds ?? `unknown-${index}`}`,
+    id: `window-${index}`,
     label: labelFor(seconds)
   };
   if (used === null || !resetAt) {
@@ -8214,7 +8223,8 @@ var codexAdapter = {
       throw new HttpError("not_configured", "No OpenAI / Codex login was found. Run `codex login`.");
     const headers = {
       Accept: "application/json",
-      Authorization: `Bearer ${imported.accessToken}`
+      Authorization: `Bearer ${imported.accessToken}`,
+      "User-Agent": "OpenChamber quota display"
     };
     if (imported.accountId)
       headers["ChatGPT-Account-Id"] = imported.accountId;
@@ -8229,16 +8239,31 @@ var codexAdapter = {
     });
     const body = asRecord(response.body) ?? {};
     const rateLimit = asRecord(body.rate_limit) ?? {};
+    const now = context.now();
     const windows = [];
     for (const [index, key] of ["primary_window", "secondary_window"].entries()) {
-      const window = parseWindow2(rateLimit[key], index);
+      const window = parseWindow2(rateLimit[key], index, now);
       if (window)
         windows.push(window);
+    }
+    const monthlySeconds = 2628000;
+    const spend = asRecord(body.spend_control);
+    const individualLimit = asRecord(spend?.individual_limit);
+    const remaining = asNumber(individualLimit?.remaining_percent);
+    const spendReset = individualLimit ? resetAtFor(individualLimit, now) : null;
+    if (!windows.some((window) => window.durationSeconds === monthlySeconds) && remaining !== null && spendReset) {
+      windows.push({
+        id: "spend-monthly",
+        label: "30d",
+        remainingPercent: Math.min(100, Math.max(0, remaining)),
+        resetAt: spendReset,
+        durationSeconds: monthlySeconds
+      });
     }
     const balances = [];
     const credits = asRecord(body.credits);
     const balance = asNumber(credits?.balance);
-    if (balance !== null) {
+    if (credits?.has_credits === true && balance !== null) {
       balances.push({ id: "credits", label: "Credits", value: balance, unit: "credits" });
     }
     if (!windows.length && !balances.length) {
@@ -9066,7 +9091,7 @@ class SnapshotService {
   async saveCache() {
     await mkdir2(this.deps.dataDir, { recursive: true });
     const file = path3.join(this.deps.dataDir, "cache.json");
-    const temp = `${file}.${process.pid}.tmp`;
+    const temp = `${file}.${process.pid}.${randomUUID2()}.tmp`;
     await writeFile2(temp, JSON.stringify({ ...this.getSnapshot(), scheduler: this.deps.scheduler.exportState() }, null, 2), { mode: 384 });
     await rename2(temp, file);
   }

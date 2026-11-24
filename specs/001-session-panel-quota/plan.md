@@ -4,7 +4,7 @@
 
 **Input**: [Living requirements, REQ 1–5](../../docs/REQUIREMENTS.md).
 
-**Status**: Implementation is present and verified with an isolated OpenChamber 2.8.0 host, live Tavily/OpenRouter/OpenCode Go keys, and a local HTTPS fixture. Live custom, Codex, and Zen verification remains pending.
+**Status**: Implementation is present and verified with an isolated OpenChamber 2.8.0 host, live Tavily/OpenRouter/OpenCode Go keys, the full quickstart, and a local HTTPS fixture. Custom, Codex, and Zen setup is hidden; OAuth login support and live Codex/Zen verification are future work.
 
 ## Summary
 
@@ -110,4 +110,4 @@ The earlier status probe has been removed from the tree; its results are recorde
    - OpenCode Zen: Console `/usage/models` and `/budgets/service-accounts/status`, Bearer key or token; verify the API-key path.
    - Codex: `GET https://chatgpt.com/backend-api/wham/usage`, Bearer access token from an imported Codex CLI login; no OAuth flow in the first release.
 4. **REQ 4 persistence — designed.** Instance-scoped `host.storage`; a newly added provider is auto-enabled with its current windows while new window types stay opt-in. Credentials stay in the service data directory.
-5. **Residual risks.** The service round-trip, collapse/unload, restart, and two-instance isolation passed in the isolated host; see [verification.md](verification.md). Live Tavily, OpenRouter, and OpenCode Go checks passed; custom, Codex, and Zen live checks and Windows data-directory permissions still need verification.
+5. **Residual risks.** The service round-trip, collapse/unload, restart, and two-instance isolation passed in the isolated host; see [verification.md](verification.md). Live Tavily, OpenRouter, and OpenCode Go checks and the full quickstart passed. Codex, Zen, and custom setup is hidden; OAuth logins, Console token refresh, live Codex/Zen checks, and Windows data-directory permissions remain future work.

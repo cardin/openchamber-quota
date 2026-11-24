@@ -36,9 +36,6 @@ export const renderConnections = (connections: Connection[]): string => {
           <option value="tavily">Tavily</option>
           <option value="openrouter">OpenRouter</option>
           <option value="opencode-go">OpenCode Go</option>
-          <option value="opencode-zen">OpenCode Zen</option>
-          <option value="codex">OpenAI / Codex</option>
-          <option value="custom">Custom</option>
         </select>
       </label>
       <label class="quota-field" data-field="label">Label <input name="label" maxlength="60" placeholder="Provider name" /></label>

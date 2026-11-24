@@ -137,7 +137,7 @@ description: "Task list for Session Panel quota display"
 - [X] T044 [P] [US4] Implement `src/providers/codex.ts`: import `~/.codex/auth.json` `tokens.access_token` and `tokens.account_id` on user action; `GET https://chatgpt.com/backend-api/wham/usage`; map primary/secondary windows and credits; surface token expiry as `auth`.
 - [X] T045 [P] [US4] Implement `src/providers/opencode-zen.ts`: Console `GET /usage/models?range=…` and `/budgets/service-accounts/status` with Bearer key/token; map request counts and spend budgets; if the key path is rejected, show `auth` and do not invent data.
 - [X] T046 [US4] Add adapter fixture tests in `tests/unit/providers/` for all six kinds, including Tavily monthly plan/key/PAYG resets, OpenRouter unlimited, Codex expiry, and Zen auth failure.
-- [ ] T047 [US4] Run the live manual checks for custom, Tavily, OpenRouter, Go, Codex, and Zen; record dates, auth method, and any missing fields in `specs/001-session-panel-quota/verification.md`. Tavily, OpenRouter, and OpenCode Go passed with API keys on 2026-11-24; custom, Codex, and Zen remain.
+- [ ] T047 [US4] Codex and Zen live checks are deferred while their setup is hidden. Tavily, OpenRouter, and OpenCode Go passed with API keys on 2026-11-24. Re-enable this task after OAuth/live-account verification.
 
 **Checkpoint**: The REQ 2 set is covered and independently testable.
 
@@ -150,7 +150,7 @@ description: "Task list for Session Panel quota display"
 - [X] T050 [P] Add accessibility checks in `tests/unit/a11y.test.ts` for bar roles, accessible names, and warning/danger state classes. Host theme contrast and keyboard focus order are manual checks, not unit-test coverage.
 - [X] T051 [P] Add `tests/unit/scheduler.test.ts` for one in-flight request, coalescing, Tavily 10-minute minimum, 5-minute defaults, `Retry-After`, reset refresh, and no timers while unmounted.
 - [X] T052 [P] Update `README.md` with install, connection setup, system TLS trust, and the no-OpenChamber-credential rule.
-- [ ] T053 Run [quickstart.md](quickstart.md) end to end and record the results in `specs/001-session-panel-quota/verification.md`.
+- [X] T053 Run [quickstart.md](quickstart.md) end to end and record the results in `specs/001-session-panel-quota/verification.md`. User confirmed the full quickstart and session switch on 2026-11-24.
 - [X] T054 Run `bun run typecheck`, `bun test`, and `bun run build`; fix failures and confirm the package installs cleanly.
 - [X] T055 Make the Work Status section display-only: no Manage button, no provider/window selector, no settings forms, and a single refresh icon.
 - [X] T056 Add the `Quota settings` full-screen page in `src/settings/` for connections, non-resetting usage, window selection, cutoff, and reset time; add `contributes.page` and the build step.
@@ -228,7 +228,7 @@ T045 Implement OpenCode Zen adapter in src/providers/opencode-zen.ts
 
 ## Pending Host Verification
 
-T047 remains open for custom, Codex, and Zen live checks; Tavily, OpenRouter, and OpenCode Go passed on 2026-11-24. T053 remains open for the full quickstart. The isolated host fixture checks passed; see `verification.md`.
+T047 is deferred for Codex and Zen while their setup is hidden; Tavily, OpenRouter, and OpenCode Go passed on 2026-11-24. Custom setup is hidden until a live endpoint is available. T053 passed on 2026-11-24. The isolated host fixture checks passed; see `verification.md`.
 
 ## Phase 8: Convergence
 
@@ -244,3 +244,8 @@ T047 remains open for custom, Codex, and Zen live checks; Tavily, OpenRouter, an
 - [X] T064 [US1] Add the `Show quota as` Remaining/Used control to `src/section/view/selector.ts` and persist changes from `src/settings/main.ts`; cover it in `tests/unit/settings-view.test.ts`.
 - [X] T065 [US1] Render Used mode for windows and caps in `src/section/view/window.ts`: mirror the fill and benchmark, show used raw values, keep colors based on remaining, and leave balances unchanged; cover it in `tests/unit/display.test.ts`.
 - [X] T066 [US1] Add `tests/unit/empty.test.ts` for the three FR-012/SC-008 outcomes and record the verification row.
+
+## Phase 10: Deferred Work
+
+- [ ] T067 Evaluate OAuth login support for Codex and OpenCode Zen, including OpenCode Console OAuth/token refresh and org metadata; re-enable their add-provider options only after live verification.
+- [ ] T068 Re-enable custom-provider setup once a live HTTPS endpoint is available for end-to-end verification.

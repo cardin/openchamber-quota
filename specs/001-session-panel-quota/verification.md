@@ -3,7 +3,7 @@
 | Date | Check | Result | Notes |
 | --- | --- | --- | --- |
 | 2026-11-24 | TypeScript typecheck | Pass | `bun run typecheck` |
-| 2026-11-24 | Unit, contract, integration tests | Pass | 101 tests, 0 failures |
+| 2026-11-24 | Unit, contract, integration tests | Pass | 105 tests, 0 failures |
 | 2026-11-24 | Section, settings, and service build | Pass | `bun run build` |
 | 2026-11-24 | Manifest validation | Pass | `openchamber-guest-check .` |
 | 2026-11-24 | Section is display-only (simulated) | Pass | No Manage/selector; header refresh control registered |
@@ -18,6 +18,7 @@
 | 2026-11-24 | Warning and danger colors | Pass | Warning and danger fills use the host warning/error colors; no pattern is required |
 | 2026-11-24 | Window status alignment | Pass | The `5h` label stays in the label column and `refreshing…` starts at the bar column |
 | 2026-11-24 | Custom provider edit | Pass | `PUT` keeps the existing key when the field is blank; settings exposes Edit and Cancel |
+| 2026-11-24 | Concurrent cache writes | Pass | Unique temp names prevent refresh/cache write races; three consecutive 105-test runs pass |
 | 2026-11-24 | Contract enforcement | Pass | Runtime Snapshot validation checks actual service output, rejects invalid timestamps, and discards corrupt cache; response stays valid if provider state changes before serialization |
 | 2026-11-24 | Periodic refresh, retry, and cleanup | Pass | Scheduler next-allowed tests; fake timers verify duplicate start, stop, restart, and late responses |
 | 2026-11-24 | Tavily legacy selection | Pass | All three former limits migrate once when the window list is absent; existing lists and later opt-outs persist |
@@ -29,18 +30,23 @@
 | 2026-11-24 | Host preferences (T029) | Pass | Deselect a window, auto-enable a new provider, leave a staged new window type opt-in, and restore choices and absolute reset format after restarting the host |
 | 2026-11-24 | Host caps and balances (T035) | Pass | Two no-reset caps displayed remaining vs maximum with no benchmark; the balance rendered as a number |
 | 2026-11-24 | Instance isolation and secret-free views | Pass | Separate OpenChamber data directories; the second instance had no connections or display preference. Snapshot and display storage omitted fixture key and endpoint |
-| 2026-11-24 | Keyboard focus (spot check) | Pass | Tab moved from the fixture provider checkbox to its first window. Broader focus order and host-theme contrast are not covered by automated accessibility checks |
+| 2026-11-24 | Keyboard focus (live settings) | Pass | Tab order: Provider → Label → Key → show/hide eye → Add provider → Display controls; hidden endpoint and Cancel are skipped. Playwright now checks the fixture order |
+| 2026-11-24 | Contrast (light/dark) | Pass | Settings text ≥4.95:1/5.99:1; status text ≥5.27:1/6.68:1; bar fill vs track ≥4.18:1/5.55:1; fill vs panel ≥4.89:1/6.46:1. Live host values; fixture ratios are now automated |
+| 2026-11-24 | Playwright accessibility tests | Pass | `bun run test:a11y`: 4 tests cover light/dark contrast, tab order, hidden provider options, and warning/danger/benchmark bars |
 | 2026-11-24 | Empty-state outcomes | Pass | Unit tests cover no provider, all quotas hidden, and a provider reporting no windows; provider failures remain errors |
-| — | Live custom provider | Pending | Requires a live HTTPS endpoint |
+| — | Live custom provider | Deferred | Setup is hidden until a live endpoint is available; existing connections remain supported |
 | 2026-11-24 | Live Tavily | Pass | API key; quotas displayed |
 | 2026-11-24 | Live OpenRouter | Pass | API key; quotas displayed |
 | 2026-11-24 | Live OpenCode Go | Pass | API key; quotas displayed |
-| — | Live Codex | Pending | Needs `~/.codex/auth.json` |
-| — | Live OpenCode Zen | Pending | Needs a key/token; verify key acceptance |
+| — | Live Codex | Deferred | Setup hidden; OAuth and live-account verification are future work |
+| — | Live OpenCode Zen | Deferred | Setup hidden; OAuth and live-account verification are future work |
 | 2026-11-24 | Remaining/Used display mode | Pass | Extension 0.2.0; settings choice persisted; simulated settings→section round trip switched a 25%-remaining window to 75% used with a 25% benchmark, kept warning color, and showed a cap as 10 / 50; 97 tests, typecheck, build |
 | 2026-11-24 | Custom TLS setting removed | Pass | Quota settings has no TLS/CA control; live service returns 404 for GET and PUT `/config`; 97 tests, typecheck, build, package check |
 | 2026-11-24 | API key visibility toggle | Pass | Live settings: the eye button reveals the pasted key and switches to an eye-off icon, Enter toggles without saving, and Codex hides the control; 98 tests, typecheck, build |
-| — | Full quickstart (T053) | Partial | Isolated fixture checks passed; Tavily, OpenRouter, and OpenCode Go live checks passed. Custom, Codex, Zen, and a separate session-switch check remain |
+| 2026-11-24 | Codex adapter alignment | Pass | Request shape matches the reference; added `reset_after_seconds`, `has_credits` guard, and monthly spend-control fallback; fixture tests pass |
+| 2026-11-24 | Zen adapter review | Deferred | Reference uses Console OAuth with org metadata and billing/status, billing/account, current-budgets, cost-by-day; our API-key and service-account-budget path is unverified and likely incompatible |
+| 2026-11-24 | Unverified provider options hidden | Pass | Live settings offers only Tavily, OpenRouter, and OpenCode Go; existing Custom/Codex/Zen connections remain editable; 105 tests, typecheck, build |
+| 2026-11-24 | Full quickstart (T053) | Pass | User-confirmed full quickstart and session switch on 2026-11-24; Codex and Zen setup hidden pending OAuth |
 
 ## Local service smoke command
 

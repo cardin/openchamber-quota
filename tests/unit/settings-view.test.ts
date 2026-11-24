@@ -16,6 +16,16 @@ describe("settings provider list", () => {
     expect(used).not.toContain('<option value="remaining" selected>');
   });
 
+  test("does not offer unverified providers in the add-provider list", () => {
+    const html = renderConnections([]);
+    expect(html).not.toContain('<option value="custom"');
+    expect(html).not.toContain('<option value="codex"');
+    expect(html).not.toContain('<option value="opencode-zen"');
+    expect(html).toContain('<option value="tavily"');
+    expect(html).toContain('<option value="openrouter"');
+    expect(html).toContain('<option value="opencode-go"');
+  });
+
   test("offers edit, test, remove, and cancel edit controls", () => {
     const html = renderConnections([
       {

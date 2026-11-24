@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { CredentialStore } from "../../src/service/credentials.ts";
@@ -34,6 +34,17 @@ const setup = async (fail = false) => {
 };
 
 describe("US1 integration", () => {
+  test("concurrent refreshes write one valid cache without temp-file collisions", async () => {
+    const { service, dir } = await setup();
+    await Promise.all([service.refresh(), service.refresh()]);
+    const cache = JSON.parse(await readFile(path.join(dir, "cache.json"), "utf8")) as {
+      version: number;
+      providers: unknown[];
+    };
+    expect(cache.version).toBe(1);
+    expect(cache.providers).toHaveLength(1);
+  });
+
   test("renders a successful snapshot and a provider-level error", async () => {
     const { service, scheduler, connection, fail } = await setup();
     const ok = await service.refresh();

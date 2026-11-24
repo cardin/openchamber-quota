@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
@@ -222,7 +223,7 @@ export class SnapshotService {
   private async saveCache(): Promise<void> {
     await mkdir(this.deps.dataDir, { recursive: true });
     const file = path.join(this.deps.dataDir, "cache.json");
-    const temp = `${file}.${process.pid}.tmp`;
+    const temp = `${file}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(
       temp,
       JSON.stringify({ ...this.getSnapshot(), scheduler: this.deps.scheduler.exportState() }, null, 2),

@@ -120,7 +120,15 @@ const fillConnectionForm = (connection: Connection): void => {
   const form = root.querySelector<HTMLFormElement>('[data-form="connection"]');
   if (!form) return;
   const kind = form.querySelector<HTMLSelectElement>('select[name="kind"]');
-  if (kind) kind.value = connection.kind;
+  if (kind) {
+    if (!kind.querySelector(`option[value="${connection.kind}"]`)) {
+      const option = document.createElement("option");
+      option.value = connection.kind;
+      option.textContent = providerLabel(connection.kind);
+      kind.append(option);
+    }
+    kind.value = connection.kind;
+  }
   const label = form.querySelector<HTMLInputElement>('input[name="label"]');
   if (label) {
     label.value = connection.label;

@@ -13,6 +13,8 @@ Default to showing quota remaining. Users can choose to show quota used instead 
 ## REQ 2
 The plugin must support these providers: user-defined custom providers, OpenAI Codex, OpenCode Go, OpenRouter, Tavily, and OpenCode Zen. Additional providers may be added later. A provider is in scope only when it exposes quota data the plugin can retrieve. The plugin must not read OpenChamber's credential store.
 
+OpenAI / Codex, OpenCode Zen, and custom-provider setup are hidden in this release pending OAuth or live-endpoint verification. Their adapters and existing connections remain supported.
+
 ## REQ 3
 The plugin must display its quota UI in OpenChamber's Session Panel.
 
@@ -22,4 +24,4 @@ Users must be able to choose which supported providers to display and, for each 
 Selections are saved per OpenChamber instance and survive restarts. Before any selection is saved, show all windows from configured providers. After saving, a newly added provider appears with its current windows; a newly reported window type stays hidden until enabled. Non-reporting balances are shown by default and can be hidden per provider.
 
 ## REQ 5
-Users must be able to include their own custom providers. A custom provider supplies a label, HTTPS endpoint, and key using the supported quota format; no field mapping or format picker is offered.
+Custom providers use a label, HTTPS endpoint, and key returning the supported quota format; no field mapping or format picker is offered. Custom provider setup is hidden in this release until a live endpoint can be verified. Existing custom connections remain supported.

@@ -29,14 +29,21 @@ const readCodexLogin = async (codexHome: string): Promise<{ accessToken: string;
   }
 };
 
-const parseWindow = (value: unknown, index: number): QuotaWindow | null => {
+const resetAtFor = (entry: Record<string, unknown>, now: number): string | null => {
+  const direct = toIso(entry.reset_at);
+  if (direct) return direct;
+  const after = asNumber(entry.reset_after_seconds);
+  return after !== null && after > 0 ? new Date(now + after * 1000).toISOString() : null;
+};
+
+const parseWindow = (value: unknown, index: number, now: number): QuotaWindow | null => {
   const entry = asRecord(value);
   if (!entry) return null;
   const used = asNumber(entry.used_percent);
-  const resetAt = toIso(entry.reset_at);
+  const resetAt = resetAtFor(entry, now);
   const seconds = asNumber(entry.limit_window_seconds);
   const window: QuotaWindow = {
-    id: `window-${seconds ?? `unknown-${index}`}`,
+    id: `window-${index}`,
     label: labelFor(seconds),
   };
   if (used === null || !resetAt) {
@@ -63,6 +70,7 @@ export const codexAdapter: Adapter = {
     const headers: Record<string, string> = {
       Accept: "application/json",
       Authorization: `Bearer ${imported.accessToken}`,
+      "User-Agent": "OpenChamber quota display",
     };
     if (imported.accountId) headers["ChatGPT-Account-Id"] = imported.accountId;
     const response = await context.requestJson("https://chatgpt.com/backend-api/wham/usage", {
@@ -76,15 +84,34 @@ export const codexAdapter: Adapter = {
     });
     const body = asRecord(response.body) ?? {};
     const rateLimit = asRecord(body.rate_limit) ?? {};
+    const now = context.now();
     const windows: QuotaWindow[] = [];
     for (const [index, key] of ["primary_window", "secondary_window"].entries()) {
-      const window = parseWindow(rateLimit[key], index);
+      const window = parseWindow(rateLimit[key], index, now);
       if (window) windows.push(window);
+    }
+    const monthlySeconds = 2_628_000;
+    const spend = asRecord(body.spend_control);
+    const individualLimit = asRecord(spend?.individual_limit);
+    const remaining = asNumber(individualLimit?.remaining_percent);
+    const spendReset = individualLimit ? resetAtFor(individualLimit, now) : null;
+    if (
+      !windows.some((window) => window.durationSeconds === monthlySeconds) &&
+      remaining !== null &&
+      spendReset
+    ) {
+      windows.push({
+        id: "spend-monthly",
+        label: "30d",
+        remainingPercent: Math.min(100, Math.max(0, remaining)),
+        resetAt: spendReset,
+        durationSeconds: monthlySeconds,
+      });
     }
     const balances: Balance[] = [];
     const credits = asRecord(body.credits);
     const balance = asNumber(credits?.balance);
-    if (balance !== null) {
+    if (credits?.has_credits === true && balance !== null) {
       balances.push({ id: "credits", label: "Credits", value: balance, unit: "credits" });
     }
     if (!windows.length && !balances.length) {

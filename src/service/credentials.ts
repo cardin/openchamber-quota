@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
@@ -64,7 +65,7 @@ export class CredentialStore {
 
   private async save(): Promise<void> {
     await mkdir(this.dataDir, { recursive: true });
-    const temp = `${this.file}.${process.pid}.tmp`;
+    const temp = `${this.file}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(temp, JSON.stringify(this.data, null, 2), { mode: 0o600 });
     await rename(temp, this.file);
   }

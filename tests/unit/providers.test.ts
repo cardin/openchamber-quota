@@ -239,7 +239,7 @@ describe("provider adapters", () => {
             primary_window: { used_percent: 20, limit_window_seconds: 18_000, reset_at: RESET },
             secondary_window: { used_percent: 30, limit_window_seconds: 604_800, reset_at: RESET },
           },
-          credits: { balance: 3 },
+          credits: { has_credits: true, balance: 3 },
         }),
         dir,
       ),
@@ -247,6 +247,37 @@ describe("provider adapters", () => {
     expect(result.windows).toHaveLength(2);
     expect(result.windows[0].remainingPercent).toBe(80);
     expect(result.balances[0].value).toBe(3);
+  });
+
+  test("codex uses reset_after_seconds and ignores credits the account does not have", async () => {
+    const result = await codexAdapter.fetch(
+      connection("codex", { accessToken: "token" }),
+      context(() => ({
+        rate_limit: {
+          primary_window: {
+            used_percent: 10,
+            limit_window_seconds: 18_000,
+            reset_after_seconds: 3600,
+          },
+        },
+        credits: { has_credits: false, balance: 0 },
+      })),
+    );
+    expect(result.windows[0].resetAt).toBe(new Date(NOW + 3_600_000).toISOString());
+    expect(result.balances).toEqual([]);
+  });
+
+  test("codex adds a monthly spend window when no rate-limit month exists", async () => {
+    const result = await codexAdapter.fetch(
+      connection("codex", { accessToken: "token" }),
+      context(() => ({
+        rate_limit: {
+          primary_window: { used_percent: 10, limit_window_seconds: 18_000, reset_at: RESET },
+        },
+        spend_control: { individual_limit: { remaining_percent: 40, reset_at: RESET } },
+      })),
+    );
+    expect(result.windows.find((window) => window.id === "spend-monthly")?.remainingPercent).toBe(40);
   });
 
   test("codex surfaces a rejected login", async () => {

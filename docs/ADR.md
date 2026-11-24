@@ -1,6 +1,6 @@
 # Architecture Decisions
 
-> Provisional — feature `001-session-panel-quota`: provider coverage and final acceptance remain subject to live custom, Codex, and Zen checks.
+> Provisional — feature `001-session-panel-quota`: provider coverage and final acceptance remain subject to Codex/Zen OAuth work.
 > See `specs/001-session-panel-quota/spec.md`.
 <!-- provisional:feature=001-session-panel-quota -->
 
@@ -54,7 +54,7 @@
 - **Codex:** import the Codex CLI login from `~/.codex/auth.json` on user action; no OAuth flow or OpenAI API-key quota path.
 - **OpenCode Zen:** use Console usage and budget endpoints; an unaccepted key is an auth error rather than invented data.
 
-**Consequences:** Tavily and OpenCode Go have provider-specific reset and precision rules. Live custom, Codex, and Zen acceptance remain verification items.
+**Consequences:** Tavily and OpenCode Go have provider-specific reset and precision rules. Codex and Zen setup is hidden while OAuth support and live acceptance remain future work. The reference quota implementation uses a Console OAuth token and different billing routes for Zen; the current API-key/route path is unverified.
 
 ## ADR-006: Keep selection and display preferences instance-scoped
 
@@ -65,3 +65,23 @@
 **Decision:** Store `quota.display.v1` in `host.storage`. First use shows every configured provider and its windows; an explicitly saved empty selection stays empty. A newly added provider is enabled with its current windows; a newly reported window type stays opt-in. Remaining is the default display mode; Used is a persisted presentation choice. Non-reporting balances are shown unless the user hides them per provider.
 
 **Alternatives rejected:** Host-owned preferences (not exposed to guests); per-session preferences (lose choices); auto-enabling every new window type (unexpected rows).
+
+## ADR-007: Hide custom-provider setup until it can be verified
+
+**Status:** Accepted (2026-11-24)
+
+**Context:** No live custom endpoint is available to validate the setup flow end to end. Offering an unverified connection path would invite failures that look like plugin bugs.
+
+**Decision:** Remove Custom from the add-provider list. Keep the adapter, schema, and existing connections so the path can be restored once a live endpoint is available. REQ 5 setup is deferred, not retired.
+
+**Alternatives rejected:** Leaving the option visible with a warning (still untestable); deleting the adapter (loses completed work and existing connections).
+
+## ADR-008: Defer Codex and Zen setup; investigate OAuth logins
+
+**Status:** Accepted (2026-11-24)
+
+**Context:** No live Codex or Zen accounts are available for verification. The reference quota implementation reads OpenCode OAuth logins (with Console org metadata for Zen) and refreshes tokens; our extension currently imports a Codex CLI login and uses a key-based Zen path.
+
+**Decision:** Hide Codex and Zen from the add-provider list while no verified login exists. Keep their adapters and existing connections. Future work is to evaluate OAuth login support and Console token refresh, then re-enable setup only after live verification.
+
+**Alternatives rejected:** Shipping unverified key flows (users get avoidable failures); deleting the adapters (loses provider work and leaves REQ 2 coverage permanently reduced).
