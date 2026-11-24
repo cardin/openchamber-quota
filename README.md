@@ -25,7 +25,7 @@ Install this folder from **Settings → Extensions → Install from folder**, th
 
 Open **Quota settings** from the sidebar's **Pages** section. The Pages entry is the supported configuration surface in OpenChamber 2.8.0.
 
-- Add or remove providers and test a connection.
+- Add or remove providers and test a connection. Use **Show** beside the key field to reveal a pasted key; it stays masked by default.
 - View non-resetting balances such as Tavily PAYG usage, with a per-provider option to hide them.
 - Choose which providers and windows appear in the panel.
 - Under **Display → Show quota as**, choose **Remaining** (default) or **Used** for windows and caps.

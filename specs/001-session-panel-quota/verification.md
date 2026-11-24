@@ -3,7 +3,7 @@
 | Date | Check | Result | Notes |
 | --- | --- | --- | --- |
 | 2026-11-24 | TypeScript typecheck | Pass | `bun run typecheck` |
-| 2026-11-24 | Unit, contract, integration tests | Pass | 97 tests, 0 failures |
+| 2026-11-24 | Unit, contract, integration tests | Pass | 98 tests, 0 failures |
 | 2026-11-24 | Section, settings, and service build | Pass | `bun run build` |
 | 2026-11-24 | Manifest validation | Pass | `openchamber-guest-check .` |
 | 2026-11-24 | Section is display-only (simulated) | Pass | No Manage/selector; header refresh control registered |
@@ -38,6 +38,7 @@
 | — | Live OpenCode Zen | Pending | Needs a key/token; verify key acceptance |
 | 2026-11-24 | Remaining/Used display mode | Pass | Extension 0.2.0; settings choice persisted; simulated settings→section round trip switched a 25%-remaining window to 75% used with a 25% benchmark, kept warning color, and showed a cap as 10 / 50; 97 tests, typecheck, build |
 | 2026-11-24 | Custom TLS setting removed | Pass | Quota settings has no TLS/CA control; live service returns 404 for GET and PUT `/config`; 97 tests, typecheck, build, package check |
+| 2026-11-24 | API key visibility toggle | Pass | Live settings: Show reveals the pasted key, Hide re-masks it, Enter toggles without saving, and Codex hides the control; 98 tests, typecheck, build |
 | — | Full quickstart (T053) | Partial | Isolated fixture checks passed; still needs live accounts and a separate session-switch check |
 
 ## Local service smoke command

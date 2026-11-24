@@ -91,6 +91,16 @@ const syncConnectionForm = (): void => {
     keyInput.disabled = kind === "codex";
     keyInput.placeholder = kind === "codex" ? "Not needed" : "API key";
   }
+  const keyToggle = form.querySelector<HTMLButtonElement>('[data-action="toggle-key"]');
+  if (keyToggle) {
+    const unavailable = kind === "codex";
+    keyToggle.hidden = unavailable;
+    keyToggle.disabled = unavailable;
+    keyToggle.textContent = "Show";
+    keyToggle.setAttribute("aria-pressed", "false");
+    keyToggle.setAttribute("aria-label", "Show API key");
+    if (keyInput) keyInput.type = "password";
+  }
   const submit = form.querySelector<HTMLButtonElement>('[data-action="save-connection"]');
   if (submit) submit.textContent = editingId ? "Save changes" : "Add provider";
   const cancel = form.querySelector<HTMLButtonElement>('[data-action="cancel-edit"]');
@@ -257,6 +267,17 @@ root.addEventListener("click", (event) => {
     if (form) saveConnection(form);
     return;
   }
+  if (action === "toggle-key") {
+    const form = target.closest<HTMLFormElement>('[data-form="connection"]');
+    const input = form?.querySelector<HTMLInputElement>('input[name="apiKey"]');
+    if (!input) return;
+    const show = input.type === "password";
+    input.type = show ? "text" : "password";
+    target.textContent = show ? "Hide" : "Show";
+    target.setAttribute("aria-pressed", String(show));
+    target.setAttribute("aria-label", show ? "Hide API key" : "Show API key");
+    return;
+  }
   if (action === "edit-connection" && target.dataset.id) {
     editingId = target.dataset.id;
     render();
@@ -357,7 +378,7 @@ root.addEventListener("keydown", (event) => {
   if (event.key !== "Enter") return;
   const target = event.target as HTMLElement;
   const form = target.closest<HTMLFormElement>('[data-form="connection"]');
-  if (!form || target.tagName === "SELECT") return;
+  if (!form || target.tagName === "SELECT" || target.tagName === "BUTTON") return;
   event.preventDefault();
   saveConnection(form);
 });

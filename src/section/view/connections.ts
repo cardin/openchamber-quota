@@ -42,7 +42,13 @@ export const renderConnections = (connections: Connection[]): string => {
         </select>
       </label>
       <label class="quota-field" data-field="label">Label <input name="label" maxlength="60" placeholder="Provider name" /></label>
-      <label class="quota-field" data-field="key">Key <input name="apiKey" type="password" autocomplete="off" placeholder="API key" /></label>
+      <div class="quota-field" data-field="key">
+        <label for="quota-api-key">Key</label>
+        <div class="quota-key-row">
+          <input id="quota-api-key" name="apiKey" type="password" autocomplete="off" placeholder="API key" />
+          <button type="button" class="quota-key-toggle" data-action="toggle-key" aria-controls="quota-api-key" aria-pressed="false" aria-label="Show API key">Show</button>
+        </div>
+      </div>
       <label class="quota-field quota-field-full" data-field="endpoint" hidden>Endpoint <input name="endpoint" type="url" placeholder="https://example.com/quota" /></label>
       <p class="quota-form-hint quota-field-full" data-connection-hint></p>
       <span class="quota-form-actions quota-field-full">

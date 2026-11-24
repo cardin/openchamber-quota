@@ -184,6 +184,29 @@ body {
   font-size: 13px;
 }
 
+.quota-key-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.quota-form .quota-key-row input {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
+.quota-form .quota-key-toggle {
+  flex: none;
+  padding: 8px 10px;
+  border: 1px solid var(--oc-border, color-mix(in srgb, CanvasText 22%, transparent));
+  border-radius: var(--oc-radius, 8px);
+  background: var(--oc-elevated, transparent);
+  color: var(--oc-fg, inherit);
+  font-size: 11px;
+  cursor: pointer;
+}
+
 .quota-form input:focus,
 .quota-form select:focus {
   outline: 2px solid var(--oc-focus, var(--oc-primary, #4f8cff));
