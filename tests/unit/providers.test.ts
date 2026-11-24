@@ -3,7 +3,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { AdapterContext } from "../../src/providers/types.ts";
-import type { ProviderKind, StoredConnection } from "../../src/core/types.ts";
+import { DEFAULT_SELECTION, type ProviderKind, type StoredConnection } from "../../src/core/types.ts";
 import { customAdapter } from "../../src/providers/custom.ts";
 import { tavilyAdapter } from "../../src/providers/tavily.ts";
 import { openRouterAdapter } from "../../src/providers/openrouter.ts";
@@ -11,6 +11,7 @@ import { openCodeGoAdapter } from "../../src/providers/opencode-go.ts";
 import { codexAdapter } from "../../src/providers/codex.ts";
 import { openCodeZenAdapter } from "../../src/providers/opencode-zen.ts";
 import { HttpError } from "../../src/service/http.ts";
+import { renderWindow } from "../../src/section/view/window.ts";
 import { customPayload, NOW, RESET } from "../fixtures/provider.ts";
 
 const context = (body: (url: string) => unknown, codexHome?: string): AdapterContext => ({
@@ -116,6 +117,70 @@ describe("provider adapters", () => {
     expect(result.windows).toHaveLength(2);
     expect(result.windows[0].remainingPercent).toBe(90);
     expect(result.windows[1].remainingPercent).toBe(80);
+  });
+
+  test("opencode go uses precise Console meters to match the built-in Usage percentages", async () => {
+    const requested: string[] = [];
+    const result = await openCodeGoAdapter.fetch(
+      connection("opencode-go", { apiKey: "oc" }),
+      context((url) => {
+        requested.push(url);
+        if (!url.endsWith("/console/api/go/status")) {
+          return { usage: { rolling: { percent: 4, resetsAt: RESET } } };
+        }
+        return {
+          product: "go",
+          access: {
+            meters: {
+              fiveHour: { usedMicroCents: 48, limitMicroCents: 1000, resetsAt: RESET },
+              week: { usedMicroCents: 110, limitMicroCents: 1000, resetsAt: RESET },
+              month: { usedMicroCents: 130, limitMicroCents: 1000, resetsAt: RESET },
+            },
+          },
+        };
+      }),
+    );
+    expect(requested).toEqual(["https://opencode.ai/console/api/go/status"]);
+    expect(result.windows.map(({ id, remainingPercent }) => [id, remainingPercent])).toEqual([
+      ["rolling", 95.2],
+      ["weekly", 89],
+      ["monthly", 87],
+    ]);
+    const html = renderWindow(result.windows[0], DEFAULT_SELECTION, NOW);
+    expect(html).toContain('class="quota-value">95%</span>');
+    expect(html).toContain("5h 95% remaining");
+    expect(html).toContain("width:95.20%");
+  });
+
+  test("opencode go falls back to API-key usage when Console refuses the key", async () => {
+    const requested: string[] = [];
+    const result = await openCodeGoAdapter.fetch(connection("opencode-go", { apiKey: "oc" }), {
+      ...context(() => ({})),
+      requestJson: async (url, options) => {
+        requested.push(url);
+        expect(options?.headers?.Authorization).toBe("Bearer oc");
+        if (url.endsWith("/console/api/go/status")) throw new HttpError("auth", "Forbidden", 403);
+        return { status: 200, body: { usage: { rolling: { percent: 4, resetsAt: RESET } } } };
+      },
+    });
+    expect(requested).toEqual([
+      "https://opencode.ai/console/api/go/status",
+      "https://opencode.ai/zen/go/v1/usage",
+    ]);
+    expect(result.windows[0].remainingPercent).toBe(96);
+  });
+
+  test("opencode go honors Console rate limits instead of making a second request", async () => {
+    const failure = new HttpError("rate_limited", "Rate limited", 429, RESET);
+    const requested: string[] = [];
+    await expect(openCodeGoAdapter.fetch(connection("opencode-go", { apiKey: "oc" }), {
+      ...context(() => ({})),
+      requestJson: async (url) => {
+        requested.push(url);
+        throw failure;
+      },
+    })).rejects.toBe(failure);
+    expect(requested).toEqual(["https://opencode.ai/console/api/go/status"]);
   });
 
   test("opencode go keeps a malformed reported window as a window error", async () => {

@@ -102,7 +102,7 @@ The earlier status probe has been removed from the tree; its results are recorde
    - Custom: user endpoint + key, one versioned format.
    - Tavily: `GET https://api.tavily.com/usage`, Bearer key; plan, key, and PAYG limits reset at 00:00 UTC on the first of each month. PAYG usage without a limit is a balance; key usage without a limit is hidden.
    - OpenRouter: `GET https://openrouter.ai/api/v1/key`, Bearer key; percentage or spend.
-   - OpenCode Go: `GET https://opencode.ai/zen/go/v1/usage`, Bearer key; rolling/weekly/monthly windows.
+   - OpenCode Go: prefer Console `/console/api/go/status` meters; fall back to `/zen/go/v1/usage`. Both use the extension's Bearer key and supply rolling/weekly/monthly windows.
    - OpenCode Zen: Console `/usage/models` and `/budgets/service-accounts/status`, Bearer key or token; verify the API-key path.
    - Codex: `GET https://chatgpt.com/backend-api/wham/usage`, Bearer access token from an imported Codex CLI login; no OAuth flow in the first release.
 4. **REQ 4 persistence — designed.** Instance-scoped `host.storage`; a newly added provider is auto-enabled with its current windows while new window types stay opt-in. Credentials stay in the service data directory.

@@ -8277,10 +8277,35 @@ var codexAdapter = {
 
 // src/providers/opencode-go.ts
 var FIELDS = [
-  { key: "rolling", label: "5h", seconds: 5 * 3600 },
-  { key: "weekly", label: "7d", seconds: 7 * 86400 },
-  { key: "monthly", label: "30d", seconds: 30 * 86400 }
+  { key: "rolling", consoleKey: "fiveHour", label: "5h", seconds: 5 * 3600 },
+  { key: "weekly", consoleKey: "week", label: "7d", seconds: 7 * 86400 },
+  { key: "monthly", consoleKey: "month", label: "30d", seconds: 30 * 86400 }
 ];
+var CONSOLE_PRODUCTS = new Set(["go", "go-plus", "go-teams"]);
+var remainingPercent = (usedPercent) => Math.min(100, Math.max(0, 100 - usedPercent));
+var parseConsoleWindows = (payload) => {
+  const body = asRecord(payload);
+  if (typeof body?.product !== "string" || !CONSOLE_PRODUCTS.has(body.product))
+    return [];
+  const meters = asRecord(asRecord(body.access)?.meters);
+  const windows = [];
+  for (const field of FIELDS) {
+    const entry = asRecord(meters?.[field.consoleKey]);
+    const used = asNumber(entry?.usedMicroCents);
+    const limit = asNumber(entry?.limitMicroCents);
+    const resetAt = toIso(entry?.resetsAt);
+    if (used === null || used < 0 || limit === null || limit <= 0 || !resetAt)
+      continue;
+    windows.push({
+      id: field.key,
+      label: field.label,
+      remainingPercent: remainingPercent(used / limit * 100),
+      resetAt,
+      durationSeconds: field.seconds
+    });
+  }
+  return windows;
+};
 var openCodeGoAdapter = {
   kind: "opencode-go",
   minIntervalMs: 5 * 60000,
@@ -8288,7 +8313,7 @@ var openCodeGoAdapter = {
     const apiKey = connection.secret.apiKey;
     if (!apiKey)
       throw new HttpError("not_configured", "OpenCode Go has no API key.");
-    const response = await context.requestJson("https://opencode.ai/zen/go/v1/usage", {
+    const requestOptions = {
       headers: {
         Accept: "application/json",
         Authorization: `Bearer ${apiKey}`,
@@ -8297,7 +8322,17 @@ var openCodeGoAdapter = {
       },
       caBundle: context.caBundle,
       timeoutMs: 15000
-    });
+    };
+    try {
+      const status = await context.requestJson("https://opencode.ai/console/api/go/status", requestOptions);
+      const windows = parseConsoleWindows(status.body);
+      if (windows.length)
+        return { windows, caps: [], balances: [] };
+    } catch (error) {
+      if (error instanceof HttpError && error.code === "rate_limited")
+        throw error;
+    }
+    const response = await context.requestJson("https://opencode.ai/zen/go/v1/usage", requestOptions);
     const body = asRecord(response.body) ?? {};
     const usage = asRecord(body.usage) ?? {};
     const windows = [];
@@ -8321,7 +8356,7 @@ var openCodeGoAdapter = {
       windows.push({
         id: field.key,
         label: field.label,
-        remainingPercent: Math.min(100, Math.max(0, 100 - used)),
+        remainingPercent: remainingPercent(used),
         resetAt,
         durationSeconds: field.seconds
       });

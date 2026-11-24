@@ -28,7 +28,7 @@
 | Custom | User-supplied HTTPS URL | Bearer key | `openchamber-quota-v1` windows, caps, balance | 5 min default |
 | Tavily | `GET https://api.tavily.com/usage` | Bearer `tvly-…` | Plan, key, and PAYG limits use derived monthly resets; PAYG usage without a limit is a balance | 10 requests / 10 min |
 | OpenRouter | `GET https://openrouter.ai/api/v1/key` | Bearer key | `limit`, `limit_remaining`, `usage_monthly`, `limit_reset` daily/weekly/monthly | 5 min |
-| OpenCode Go | `GET https://opencode.ai/zen/go/v1/usage` | Bearer API key | `usage.rolling/weekly/monthly` percent + `resetsAt` | 5 min |
+| OpenCode Go | `GET https://opencode.ai/console/api/go/status`, fallback `/zen/go/v1/usage` | Bearer API key | Prefer precise used/limit meters as in built-in Usage; fallback reports whole used percentages. Both report reset times. | 5 min |
 | OpenCode Zen | `GET https://opencode.ai/console/api/usage/models?range=…`, `/budgets/service-accounts/status` | Bearer API key or Console token | Request counts, spend budgets with `resetsAt` | 5 min; verify key path |
 | Codex | `GET https://chatgpt.com/backend-api/wham/usage` | Bearer access token + optional `ChatGPT-Account-Id` | `rate_limit.primary_window` / `secondary_window`: `used_percent`, `limit_window_seconds`, `reset_at`; credits | 5 min |
 
