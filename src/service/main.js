@@ -8320,21 +8320,34 @@ var openCodeGoAdapter = {
       },
       timeoutMs: 15000
     };
+    let consoleWindows = [];
     try {
       const status = await context.requestJson("https://opencode.ai/console/api/go/status", requestOptions);
-      const windows = parseConsoleWindows(status.body);
-      if (windows.length)
-        return { windows, caps: [], balances: [] };
+      consoleWindows = parseConsoleWindows(status.body);
     } catch (error) {
       if (error instanceof HttpError && error.code === "rate_limited")
         throw error;
     }
-    const response = await context.requestJson("https://opencode.ai/zen/go/v1/usage", requestOptions);
-    const body = asRecord(response.body) ?? {};
-    const usage = asRecord(body.usage) ?? {};
+    if (consoleWindows.length === FIELDS.length) {
+      return { windows: consoleWindows, caps: [], balances: [] };
+    }
+    let usage = null;
+    try {
+      const response = await context.requestJson("https://opencode.ai/zen/go/v1/usage", requestOptions);
+      usage = asRecord(asRecord(response.body)?.usage);
+    } catch (error) {
+      if (!consoleWindows.length || error instanceof HttpError && error.code === "rate_limited") {
+        throw error;
+      }
+    }
     const windows = [];
     for (const field of FIELDS) {
-      const entry = asRecord(usage[field.key]);
+      const consoleWindow = consoleWindows.find((window) => window.id === field.key);
+      if (consoleWindow) {
+        windows.push(consoleWindow);
+        continue;
+      }
+      const entry = asRecord(usage?.[field.key]);
       if (!entry)
         continue;
       const used = asNumber(entry.percent);

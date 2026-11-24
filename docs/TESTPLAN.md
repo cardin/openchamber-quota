@@ -12,7 +12,7 @@
 - **Accessibility** (`tests/a11y/accessibility.pw.ts`): Playwright contrast and tab-order checks in light and dark fixture themes. Run with `bun run test:a11y`; it uses Chrome by default (`PW_CHANNEL` overrides).
 - **Build checks**: `bun run typecheck`, `bun test`, `bun run build`, and `openchamber-guest-check .`.
 
-Current result (2026-11-24): typecheck passes, 105 tests pass, 4 Playwright accessibility tests pass, the build succeeds, the guest package check passes, and the full quickstart and session switch are confirmed.
+Full verification baseline (2026-11-24): typecheck, 105 tests, 4 Playwright accessibility tests, build, guest package check, full quickstart, and session switch passed.
 
 ## Requirement coverage
 
@@ -28,6 +28,8 @@ Current result (2026-11-24): typecheck passes, 105 tests pass, 4 Playwright acce
 | REQ 3 / FR-001 | Manifest check and isolated host mount/collapse | Pass |
 | REQ 4 / SC-003, SC-008 | `tests/unit/preferences.test.ts`, `tests/integration/us2.test.ts`, `empty.test.ts`; host preferences check | Pass |
 | REQ 5 / SC-005 | `tests/contract/connections.test.ts`, `tests/unit/credentials.test.ts`, `providers.test.ts` | Adapter and existing connections retained; setup hidden; live endpoint deferred |
+
+The Go adapter regression test checks that a missing Console 5h reset is recovered from the Go usage API without rounding the valid Console weekly or monthly meters. Typecheck, all 107 tests, and the service bundle build passed for this fix; the fallback was verified with fixtures, not a live Go key.
 
 ## Manual verification
 

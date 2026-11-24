@@ -34,7 +34,7 @@ One request per provider may run at a time. Minimum intervals are five minutes b
 | Custom | User-supplied HTTPS endpoint | `openchamber-quota-v1` windows, caps, and balances; no mapping UI. Setup is hidden until a live endpoint can be verified. |
 | Tavily | `GET https://api.tavily.com/usage` | Plan, key, and PAYG limits as monthly windows reset at 00:00 UTC on the first; PAYG without a limit becomes a balance; key usage without a limit is hidden |
 | OpenRouter | `GET https://openrouter.ai/api/v1/key` | Limited key becomes a window; unlimited key becomes a spend balance |
-| OpenCode Go | Console `/console/api/go/status`, falling back to `/zen/go/v1/usage` | Prefer Console used/limit meters; fallback whole-percent usage; rolling, weekly, monthly windows |
+| OpenCode Go | Console `/console/api/go/status`, falling back per window to [Go usage](https://opencode.ai/docs/console/go) (`/zen/go/v1/usage`) | Prefer precise Console used/limit meters. Use whole-percent Go usage for missing or incomplete Console meters, including a 5h meter with no reset before the window starts. |
 | OpenCode Zen | Console usage and budget endpoints | Request counts and spend budgets; an unaccepted key is an auth error. Setup hidden; unverified: the reference implementation uses a Console OAuth token and different billing routes |
 | Codex | `GET https://chatgpt.com/backend-api/wham/usage` | Imports the Codex CLI login; primary/secondary windows and credits; no OAuth flow. Setup hidden pending live verification |
 

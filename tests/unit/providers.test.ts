@@ -152,6 +152,72 @@ describe("provider adapters", () => {
     expect(html).toContain("width:95.20%");
   });
 
+  test("opencode go fills a missing 5h reset from usage without replacing precise Console meters", async () => {
+    const requested: string[] = [];
+    const rollingReset = new Date(NOW + 5 * 3600_000).toISOString();
+    const result = await openCodeGoAdapter.fetch(
+      connection("opencode-go", { apiKey: "oc" }),
+      context((url) => {
+        requested.push(url);
+        if (url.endsWith("/console/api/go/status")) {
+          return {
+            product: "go",
+            access: {
+              meters: {
+                fiveHour: { usedMicroCents: 0, limitMicroCents: 1000, resetsAt: null },
+                week: { usedMicroCents: 123, limitMicroCents: 1000, resetsAt: RESET },
+                month: { usedMicroCents: 134, limitMicroCents: 1000, resetsAt: RESET },
+              },
+            },
+          };
+        }
+        return {
+          usage: {
+            rolling: { status: "ok", percent: 0, resetsAt: rollingReset },
+            weekly: { status: "ok", percent: 12, resetsAt: RESET },
+            monthly: { status: "ok", percent: 13, resetsAt: RESET },
+          },
+        };
+      }),
+    );
+    expect(requested).toEqual([
+      "https://opencode.ai/console/api/go/status",
+      "https://opencode.ai/zen/go/v1/usage",
+    ]);
+    expect(result.windows[0]).toEqual({
+      id: "rolling",
+      label: "5h",
+      remainingPercent: 100,
+      resetAt: rollingReset,
+      durationSeconds: 18_000,
+    });
+    expect(result.windows.slice(1).map(({ id, remainingPercent }) => [id, remainingPercent])).toEqual([
+      ["weekly", 87.7],
+      ["monthly", 86.6],
+    ]);
+  });
+
+  test("opencode go keeps valid Console meters when the fallback is unavailable", async () => {
+    const requested: string[] = [];
+    const result = await openCodeGoAdapter.fetch(
+      connection("opencode-go", { apiKey: "oc" }),
+      context((url) => {
+        requested.push(url);
+        if (!url.endsWith("/console/api/go/status")) {
+          throw new HttpError("timeout", "The provider did not answer in time.");
+        }
+        return {
+          product: "go",
+          access: { meters: { week: { usedMicroCents: 100, limitMicroCents: 1000, resetsAt: RESET } } },
+        };
+      }),
+    );
+    expect(requested).toHaveLength(2);
+    expect(result.windows.map(({ id, remainingPercent }) => [id, remainingPercent])).toEqual([
+      ["weekly", 90],
+    ]);
+  });
+
   test("opencode go falls back to API-key usage when Console refuses the key", async () => {
     const requested: string[] = [];
     const result = await openCodeGoAdapter.fetch(connection("opencode-go", { apiKey: "oc" }), {
