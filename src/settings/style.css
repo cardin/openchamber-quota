@@ -185,26 +185,57 @@ body {
 }
 
 .quota-key-row {
-  display: flex;
-  align-items: stretch;
-  gap: 6px;
+  position: relative;
 }
 
 .quota-form .quota-key-row input {
-  flex: 1 1 auto;
-  width: auto;
-  min-width: 0;
+  padding-right: 38px;
 }
 
 .quota-form .quota-key-toggle {
-  flex: none;
-  padding: 8px 10px;
-  border: 1px solid var(--oc-border, color-mix(in srgb, CanvasText 22%, transparent));
-  border-radius: var(--oc-radius, 8px);
-  background: var(--oc-elevated, transparent);
-  color: var(--oc-fg, inherit);
-  font-size: 11px;
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--oc-muted, color-mix(in srgb, CanvasText 60%, transparent));
+  transform: translateY(-50%);
   cursor: pointer;
+}
+
+.quota-form .quota-key-toggle:hover {
+  background: var(--oc-hover, color-mix(in srgb, CanvasText 8%, transparent));
+  color: var(--oc-fg, inherit);
+}
+
+.quota-form .quota-key-toggle:focus-visible {
+  outline: 2px solid var(--oc-focus, var(--oc-primary, #4f8cff));
+  outline-offset: 1px;
+}
+
+.quota-key-toggle svg {
+  display: block;
+  width: 15px;
+  height: 15px;
+}
+
+.quota-key-toggle [data-icon="hide"] {
+  display: none;
+}
+
+.quota-key-toggle[aria-pressed="true"] [data-icon="show"] {
+  display: none;
+}
+
+.quota-key-toggle[aria-pressed="true"] [data-icon="hide"] {
+  display: block;
 }
 
 .quota-form input:focus,

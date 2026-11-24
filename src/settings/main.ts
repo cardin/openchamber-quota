@@ -96,9 +96,9 @@ const syncConnectionForm = (): void => {
     const unavailable = kind === "codex";
     keyToggle.hidden = unavailable;
     keyToggle.disabled = unavailable;
-    keyToggle.textContent = "Show";
     keyToggle.setAttribute("aria-pressed", "false");
     keyToggle.setAttribute("aria-label", "Show API key");
+    keyToggle.setAttribute("title", "Show API key");
     if (keyInput) keyInput.type = "password";
   }
   const submit = form.querySelector<HTMLButtonElement>('[data-action="save-connection"]');
@@ -273,9 +273,9 @@ root.addEventListener("click", (event) => {
     if (!input) return;
     const show = input.type === "password";
     input.type = show ? "text" : "password";
-    target.textContent = show ? "Hide" : "Show";
     target.setAttribute("aria-pressed", String(show));
     target.setAttribute("aria-label", show ? "Hide API key" : "Show API key");
+    target.setAttribute("title", show ? "Hide API key" : "Show API key");
     return;
   }
   if (action === "edit-connection" && target.dataset.id) {

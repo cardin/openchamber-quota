@@ -32,13 +32,16 @@ describe("settings provider list", () => {
     expect(html).toContain('data-action="cancel-edit"');
   });
 
-  test("API key field has an accessible show/hide toggle", () => {
+  test("API key field has an accessible eye toggle", () => {
     const html = renderConnections([]);
     expect(html).toMatch(/<input id="quota-api-key" name="apiKey" type="password"/);
     expect(html).toContain('data-action="toggle-key"');
     expect(html).toContain('aria-controls="quota-api-key"');
     expect(html).toContain('aria-pressed="false"');
-    expect(html).toContain(">Show</button>");
+    expect(html).toContain('aria-label="Show API key"');
+    expect(html).toContain('data-icon="show"');
+    expect(html).toContain('data-icon="hide"');
+    expect(html).not.toContain(">Show</button>");
   });
 
   test("display offers a hide-balances checkbox for a provider that reports balances", () => {
