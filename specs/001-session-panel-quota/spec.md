@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-19
 
-**Status**: Draft
+**Status**: Implemented (host and local verification complete; live provider checks in progress)
 
 **Input**: [Living requirements](../../docs/REQUIREMENTS.md). This spec covers the amended REQ 1–5: the named provider set, the Work Status section, and user-defined providers. It does not amend the living requirements.
 
@@ -49,7 +49,7 @@ As an OpenChamber user, I want to see how much quota I have left, an estimate ba
 
 **Why this priority**: Users need to know how much quota they have left and how to pace their use until the reset.
 
-**Independent Test**: Open the Session Panel halfway through a known quota window. Check that the bar distinguishes actual quota remaining from the 50% even-use benchmark and shows the correct reset time. Repeat with missing data.
+**Independent Test**: Open the Session Panel halfway through a known quota window. Check that the bar distinguishes actual quota remaining from the 50% even-use benchmark and shows the correct reset time. Switch to Used and check that the fill and value mirror the used quota while the benchmark moves to elapsed use and the warning and reset stay unchanged. Repeat with missing data.
 
 **Acceptance Scenarios**:
 
@@ -91,7 +91,7 @@ As an OpenChamber user, I want to see spend caps, lifetime limits, and prepaid b
 
 **Why this priority**: Some supported providers expose quota-like values without a reset window. Leaving them out would hide useful limits and exclude providers that only report a balance.
 
-**Independent Test**: Display one spend cap, one lifetime limit, and one prepaid balance from synthetic data. Check that caps use a bar without a reset or benchmark, and the balance is a number only.
+**Independent Test**: Display one spend cap, one lifetime limit, and one prepaid balance from synthetic data. Check that caps follow the Remaining/Used setting and use a bar without a reset or benchmark, and the balance is a number only.
 
 **Acceptance Scenarios**:
 
@@ -166,7 +166,7 @@ As an OpenChamber user, I want providers with quota data to be available, includ
 - **SC-006**: Verify color below, at, and above the default 10% cutoff, with the benchmark above, equal to, below, or unavailable relative to actual quota. Verify that changing the cutoff applies to all windows and that danger takes precedence over warning.
 - **SC-007**: Verify refresh on open, periodically while visible, manually, and at reset subject to provider limits. Verify that automatic refresh stops while the panel is hidden, unexpired bars remain during refresh, and expired bars are replaced by loading even when provider limits delay the fetch.
 - **SC-008**: Verify distinct outcomes for no eligible providers configured, all quotas hidden by selection, and a selected provider reporting no windows. A provider failure remains an error, not an empty state.
-- **SC-009**: Verify that a spend cap and a lifetime limit each show a remaining-versus-maximum bar with no reset or benchmark, and that a prepaid balance shows a number with no bar. Verify that neither display invents a reset or benchmark.
+- **SC-009**: Verify that a spend cap and a lifetime limit each show a remaining-or-used-versus-maximum bar, following the display setting, with no reset or benchmark, and that a prepaid balance shows a number with no bar. Verify that neither display invents a reset or benchmark.
 - **SC-010**: Verify relative reset time on first use, the absolute 24-hour/weekday/date formats after the user switches the setting, and that the choice survives a session switch and restart on the same instance.
 - **SC-011**: Verify the default Remaining view, the matching Used values and benchmark after switching, and restoration of the choice on reopening. Verify that switching mode does not change colors, resets, balances, or provider/window selection.
 
@@ -179,8 +179,8 @@ As an OpenChamber user, I want providers with quota data to be available, includ
 
 ## Resolved Decisions
 
-- **REQ 1 — Refresh and failure states:** Resolved. The section loads the snapshot every 5 seconds, attempts a refresh on mount, every 60 seconds, at reset, and manually. The service enforces provider limits and schedules a retry when an attempt is blocked. Host timing remains a verification item.
-- **REQ 1 — Display details:** Resolved. Rows show quota remaining by default, or quota used when configured. Reset times are relative by default. The countdown refreshes from the snapshot poll.
-- **REQ 2/3 — Host integration and provider coverage:** Resolved for OpenChamber 2.8.0. A local guest service owns provider I/O and credentials. Live Zen key support, Codex token lifetime, and load/unload timing remain verification items.
+- **REQ 1 — Refresh and failure states:** Resolved. The section loads the snapshot every 5 seconds, attempts a refresh on mount, every 60 seconds, at reset, and manually. The service enforces provider limits and schedules a retry when an attempt is blocked. Host mount, refresh, and collapse timing were verified in an isolated OpenChamber instance.
+- **REQ 1 — Display details:** Resolved. Rows show quota remaining by default, or quota used when configured. Switching mode does not change colors, resets, balances, or the provider/window selection. Reset times are relative by default. The countdown refreshes from the snapshot poll.
+- **REQ 2/3 — Host integration and provider coverage:** Resolved for OpenChamber 2.8.0. A local guest service owns provider I/O and credentials. Live Tavily, OpenRouter, and OpenCode Go keys were verified; Zen key support and Codex token lifetime remain verification items. Load/unload timing was verified.
 - **REQ 4 — Selection behavior:** Resolved. Removed providers retain their window selection. A newly added provider is auto-enabled with its current windows; a newly reported window type stays opt-in.
 - **REQ 5 — Custom provider setup:** Resolved. Add, edit, and remove are in Quota settings; custom labels are unique; one supported format, no mappings.

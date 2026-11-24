@@ -61,7 +61,7 @@ description: "Task list for Session Panel quota display"
 
 - [X] T017 [US1] Implement `src/section/view/window.ts`: colored bar using `remainingPercent`, a distinct benchmark marker at the even-use estimate, and the reset time. Keep actual quota and benchmark visually distinct.
 - [X] T018 [P] [US1] Implement `src/section/view/status.ts`: danger when `remainingPercent < cutoff`, warning when at/above cutoff and below the benchmark, default otherwise; default cutoff 10. Color distinguishes the states; no pattern is required.
-- [X] T019 [US1] Implement `src/section/view/states.ts`: keep unexpired bars during refresh; show loading for a first fetch or an expired window; show a window error for missing quota/reset; show one provider error with no old bars for that provider.
+- [X] T019 [US1] Implement refresh and error states in `src/section/view/window.ts` and `src/section/main.ts`: keep unexpired bars during refresh; show loading for a first fetch or an expired window; show a window error for missing quota/reset; show one provider error with no old bars for that provider.
 - [X] T020 [US1] Implement `src/section/refresh.ts`: load the snapshot every 5 seconds for countdowns, attempt `POST /refresh` on mount, every 60 seconds while mounted, on manual refresh, and when a window reaches reset; poll `GET /snapshot` until `refreshing` is false; use relative time by default.
 - [X] T021 [US1] Wire T017–T020 into `src/section/main.ts`; render providers in snapshot order and all reported windows. Selection filtering is added in US2.
 - [X] T022 [US1] Run the US1 tests and the host fixture check; verify the 25%/50%, zero, missing-reset, expired, provider-failure, and refresh scenarios; record the result in `specs/001-session-panel-quota/verification.md`.
@@ -83,8 +83,8 @@ description: "Task list for Session Panel quota display"
 
 ### Implementation for User Story 2
 
-- [X] T025 [US2] Implement `src/section/preferences.ts`: `quota.display.v1` in `host.storage` with `saved`, `providers`, `windows`, `cutoffPercent` default 10, and `resetTime` default `relative`; no secrets.
-- [X] T026 [US2] Implement `src/section/view/selector.ts`: provider, window, and hide-balances checkboxes, saved-state indicator, and a cutoff/reset-time control; auto-enable newly added providers and keep newly reported window types opt-in.
+- [X] T025 [US2] Implement `src/section/preferences.ts`: `quota.display.v1` in `host.storage` with `saved`, `providers`, `windows`, `quotaDisplay` default `remaining`, `cutoffPercent` default 10, and `resetTime` default `relative`; no secrets.
+- [X] T026 [US2] Implement `src/section/view/selector.ts`: provider, window, and hide-balances checkboxes, a Remaining/Used control, and cutoff/reset-time controls; auto-enable newly added providers and keep newly reported window types opt-in.
 - [X] T027 [P] [US2] Implement `src/section/view/empty.ts`: setup hint when no provider is configured, selection hint when everything is hidden, and provider-specific message when a successful response has no windows.
 - [X] T028 [US2] Wire preferences and the selector into `src/settings/main.ts`: first use shows all configured providers/windows; saved selections win; a saved empty selection stays empty; a newly added provider is auto-enabled; resetting a window keeps its selection.
 - [X] T029 [US2] Run the US2 tests and verify selection persistence and new-item behavior in the host; record the result in `specs/001-session-panel-quota/verification.md`.
@@ -95,19 +95,19 @@ description: "Task list for Session Panel quota display"
 
 ## Phase 5: User Story 3 - See Balances and Caps That Do Not Reset (Priority: P2)
 
-**Goal**: Caps show a remaining-versus-maximum bar with no reset or benchmark; balances show a number only.
+**Goal**: Caps show a remaining-or-used-versus-maximum bar with no reset or benchmark; balances show a number only.
 
-**Independent Test**: Fixture with one spend cap, one lifetime limit, and one prepaid balance; caps render bars, balance renders text, no reset or benchmark appears.
+**Independent Test**: Fixture with one spend cap, one lifetime limit, and one prepaid balance; caps follow the Remaining/Used setting and render bars, the balance renders text, and no reset or benchmark appears.
 
 ### Tests for User Story 3
 
-- [X] T030 [P] [US3] Write failing unit tests in `tests/unit/caps-balances.test.ts` for `remaining / limit`, cap without a limit becoming a balance, zero used, used above limit, negative balance, and no reset/benchmark fields.
+- [X] T030 [P] [US3] Write failing unit tests in `tests/unit/caps-balances.test.ts` and `tests/unit/display.test.ts` for remaining and used values against the limit, cap without a limit becoming a balance, zero used, used above limit, negative balance, and no reset/benchmark fields.
 - [X] T031 [P] [US3] Write failing integration tests in `tests/integration/us3.test.ts` for cap and balance rows from the fixture.
 
 ### Implementation for User Story 3
 
-- [X] T032 [US3] Implement `src/section/view/cap.ts`: remaining-versus-limit bar and value, unit label, no reset time, no benchmark; clamp the fill to 0% when `used > limit`.
-- [X] T033 [US3] Implement `src/section/view/balance.ts`: label, value, and unit as text; no bar, benchmark, or reset.
+- [X] T032 [US3] Implement the cap renderer in `src/section/view/window.ts`: remaining-or-used-versus-limit bar and value, unit label, no reset time, no benchmark; clamp the fill to 0% when `used > limit`.
+- [X] T033 [US3] Implement the balance renderer in `src/section/view/window.ts`: label, value, and unit as text; no bar, benchmark, or reset.
 - [X] T034 [US3] Update `src/core/normalize.ts` so a cap-like value with no maximum becomes a balance, never a full or empty bar.
 - [X] T035 [US3] Run the US3 tests and verify the fixture in the host; record the result in `specs/001-session-panel-quota/verification.md`.
 
@@ -133,11 +133,11 @@ description: "Task list for Session Panel quota display"
 - [X] T040 [US4] Implement `src/providers/custom.ts`: `GET` HTTPS endpoint with Bearer key, `openchamber-quota-v1` validation, 64 KiB limit, 10-second timeout, no redirects, and map HTTP 401/403/429/others to the documented errors.
 - [X] T041 [P] [US4] Implement `src/providers/tavily.ts`: `GET https://api.tavily.com/usage` with Bearer key; map `account.plan_usage` / `plan_limit`, `key.usage` / `limit`, and PAYG limits to monthly windows reset on the first of each month; PAYG usage without a limit to a balance; 10-minute interval.
 - [X] T042 [P] [US4] Implement `src/providers/openrouter.ts`: `GET https://openrouter.ai/api/v1/key`; map `limit`, `limit_remaining`, `usage_monthly`, and `limit_reset`; unlimited keys become a spend balance; compute daily/weekly/monthly reset boundaries.
-- [X] T043 [P] [US4] Implement `src/providers/opencode-go.ts`: `GET https://opencode.ai/zen/go/v1/usage` with Bearer key; map `usage.rolling`, `usage.weekly`, `usage.monthly` percentages and `resetsAt`.
+- [X] T043 [P] [US4] Implement `src/providers/opencode-go.ts`: prefer precise Console `GET https://opencode.ai/console/api/go/status` meters; fall back to `GET https://opencode.ai/zen/go/v1/usage` with Bearer key; map rolling/weekly/monthly windows and `resetsAt`.
 - [X] T044 [P] [US4] Implement `src/providers/codex.ts`: import `~/.codex/auth.json` `tokens.access_token` and `tokens.account_id` on user action; `GET https://chatgpt.com/backend-api/wham/usage`; map primary/secondary windows and credits; surface token expiry as `auth`.
 - [X] T045 [P] [US4] Implement `src/providers/opencode-zen.ts`: Console `GET /usage/models?range=…` and `/budgets/service-accounts/status` with Bearer key/token; map request counts and spend budgets; if the key path is rejected, show `auth` and do not invent data.
 - [X] T046 [US4] Add adapter fixture tests in `tests/unit/providers/` for all six kinds, including Tavily monthly plan/key/PAYG resets, OpenRouter unlimited, Codex expiry, and Zen auth failure.
-- [ ] T047 [US4] Run the live manual checks for custom, Tavily, OpenRouter, Go, Codex, and Zen; record dates, auth method, and any missing fields in `specs/001-session-panel-quota/verification.md`.
+- [ ] T047 [US4] Run the live manual checks for custom, Tavily, OpenRouter, Go, Codex, and Zen; record dates, auth method, and any missing fields in `specs/001-session-panel-quota/verification.md`. Tavily, OpenRouter, and OpenCode Go passed with API keys on 2026-11-24; custom, Codex, and Zen remain.
 
 **Checkpoint**: The REQ 2 set is covered and independently testable.
 
@@ -169,6 +169,7 @@ description: "Task list for Session Panel quota display"
 - **US3 (Phase 5)**: Starts after T014; depends on US1's row layout. T030/T031 first; T032/T033 parallel; T034 then T035.
 - **US4 (Phase 6)**: Starts after T014; T036/T037 first; T038 then T039; T040–T045 parallel after T038; T046 then T047.
 - **Polish (Phase 7)**: After the desired stories. T048–T052 can run in parallel; T053 then T054.
+- **Display mode (Phase 9)**: T063–T065 can run in parallel; T066 follows.
 
 ### User Story Dependencies
 
@@ -186,6 +187,7 @@ description: "Task list for Session Panel quota display"
 - US3: T030 and T031; then T032 and T033.
 - US4: T036 and T037; then T041–T045.
 - Polish: T048–T052.
+- Display mode: T063–T065; then T066.
 
 ## Parallel Example: User Story 4 adapters
 
@@ -226,7 +228,7 @@ T045 Implement OpenCode Zen adapter in src/providers/opencode-zen.ts
 
 ## Pending Host Verification
 
-T047 and T053 remain open for live provider accounts and the full quickstart. The isolated host fixture checks passed; see `verification.md`.
+T047 remains open for custom, Codex, and Zen live checks; Tavily, OpenRouter, and OpenCode Go passed on 2026-11-24. T053 remains open for the full quickstart. The isolated host fixture checks passed; see `verification.md`.
 
 ## Phase 8: Convergence
 
@@ -235,3 +237,10 @@ T047 and T053 remain open for live provider accounts and the full quickstart. Th
 - [X] T060 Update `plan.md`, `research.md`, and the `tasks.md` notes to describe Tavily plan, key, and PAYG monthly windows plus the PAYG balance fallback per plan: Tavily adapter decision (contradicts)
 - [X] T061 Add fake-timer tests for `SnapshotController.start()` and `stop()` timer cleanup, including no timers after stop/unmount per T051 (partial)
 - [X] T062 Add contrast and focus-order checks to the accessibility tests, or explicitly narrow T050 to the checks that are actually covered per T050 (partial)
+
+## Phase 9: Display Mode and Empty-State Coverage
+
+- [X] T063 [US1] Add `quotaDisplay` (`remaining`/`used`) to `src/core/types.ts` and normalize and persist it in `src/section/preferences.ts`, defaulting to `remaining`; cover it in `tests/unit/preferences.test.ts`.
+- [X] T064 [US1] Add the `Show quota as` Remaining/Used control to `src/section/view/selector.ts` and persist changes from `src/settings/main.ts`; cover it in `tests/unit/settings-view.test.ts`.
+- [X] T065 [US1] Render Used mode for windows and caps in `src/section/view/window.ts`: mirror the fill and benchmark, show used raw values, keep colors based on remaining, and leave balances unchanged; cover it in `tests/unit/display.test.ts`.
+- [X] T066 [US1] Add `tests/unit/empty.test.ts` for the three FR-012/SC-008 outcomes and record the verification row.
