@@ -5,6 +5,17 @@ import { renderSelector } from "../../src/section/view/selector.ts";
 import { DEFAULT_SELECTION } from "../../src/core/types.ts";
 
 describe("settings provider list", () => {
+  test("offers Remaining and Used and keeps the current choice selected", () => {
+    const snapshot = { version: 1 as const, generatedAt: "2026-11-24T00:00:00Z", providers: [] };
+    const defaults = renderSelector(snapshot, DEFAULT_SELECTION);
+    expect(defaults).toContain("Show quota as");
+    expect(defaults).toContain('<select data-quota-display>');
+    expect(defaults).toContain('<option value="remaining" selected>Remaining</option>');
+    const used = renderSelector(snapshot, { ...DEFAULT_SELECTION, quotaDisplay: "used" });
+    expect(used).toContain('<option value="used" selected>Used</option>');
+    expect(used).not.toContain('<option value="remaining" selected>');
+  });
+
   test("offers edit, test, remove, and cancel edit controls", () => {
     const html = renderConnections([
       {

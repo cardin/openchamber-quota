@@ -8,7 +8,7 @@
 
 ## Summary
 
-Add a **Quotas** section to OpenChamber's Work Status panel. The section is display-only: quota windows, even-use benchmarks, reset times, caps, and balances for the REQ 2 providers, plus a refresh icon. A newly added provider is enabled automatically with its current windows; a newly reported window type for an existing provider stays opt-in. Caps show the remaining value against their maximum. Configuration lives in a **Quota settings** full-screen page opened from the sidebar's **Pages** section. Because OpenChamber exposes no quota data to this extension and will not be changed, a local guest service owns the provider requests and credentials.
+Add a **Quotas** section to OpenChamber's Work Status panel. The section is display-only: quota windows, even-use benchmarks, reset times, caps, and balances for the REQ 2 providers, plus a refresh icon. A newly added provider is enabled automatically with its current windows; a newly reported window type for an existing provider stays opt-in. Windows and caps show remaining or used quota according to the instance's display setting. Configuration lives in a **Quota settings** full-screen page opened from the sidebar's **Pages** section. Because OpenChamber exposes no quota data to this extension and will not be changed, a local guest service owns the provider requests and credentials.
 
 ## Technical Context
 

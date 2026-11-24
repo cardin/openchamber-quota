@@ -8,6 +8,7 @@ import {
   saveSelection,
   setBalancesHidden,
   setCutoff,
+  setQuotaDisplay,
   setResetTime,
   toggleProvider,
   toggleWindow,
@@ -377,6 +378,11 @@ root.addEventListener("change", (event) => {
   }
   if (target.matches("[data-cutoff]")) {
     selection = setCutoff(selection, Number(target.value));
+    void saveSelection(host.storage, selection).then(render);
+    return;
+  }
+  if (target.matches("[data-quota-display]")) {
+    selection = setQuotaDisplay(selection, target.value === "used" ? "used" : "remaining");
     void saveSelection(host.storage, selection).then(render);
     return;
   }

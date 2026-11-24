@@ -35,7 +35,7 @@
 - Q: Should prepaid balances, spend caps, and lifetime limits that have no reset be shown? → A: Spend caps and lifetime limits use a bar because they have a remaining and maximum value; prepaid balances are shown as a number without a bar. Neither is given an invented reset.
 - Q: How should users tell warning and danger apart? → A: By bar color only; no pattern, separate status label, or icon is required.
 - Q: How should the reset time be shown next to a quota bar? → A: Let users choose relative or absolute time, defaulting to relative.
-- Q: Should a cap show used or remaining value? → A: Show remaining: `limit - used` against `limit`.
+- Q: Should a cap show used or remaining value? → A: Show `limit - used` against `limit` by default. Show used against `limit` when the user chooses Used.
 - Q: Where do plugin settings live? → A: The sidebar's Pages section; it is the supported configuration surface.
 - Q: Should Tavily's key-usage counter be shown? → A: No. Show Tavily's PAYG usage as a balance when no PAYG limit exists, and as a monthly window when it does. Tavily plan, key-level, and PAYG limits reset at 00:00 UTC on the first of each calendar month.
 - Q: Can users hide non-reporting balances? → A: Yes; Quota settings offers a per-provider `non-reporting balances` checkbox, checked by default; unchecking hides them.
@@ -66,6 +66,7 @@ As an OpenChamber user, I want to see how much quota I have left, an estimate ba
 11. **Given** a displayed window reaches its reset time before the next scheduled refresh, **when** the reset time arrives, **then** loading replaces the expired bar and the panel refreshes the provider at the earliest time its limits allow.
 12. **Given** a selected provider, **when** a successful response reports no quota windows, **then** the panel shows a message for that provider, not a loading state or an error. Other providers remain visible.
 13. **Given** a known reset time, **when** the panel first shows it, **then** the relative time is shown by default. **When** the user switches the reset-time display to absolute, **then** the format adapts to distance: time only within 24 hours, weekday and time within 7 days, and date only at 7 or more days.
+14. **Given** a window with 25% remaining one-quarter of the way through its duration, **when** the user switches to Used, **then** its bar and value show 75% used and its benchmark moves from 75% remaining to 25% used. The warning and reset time stay unchanged.
 
 ### User Story 2 - Choose Providers and Windows to Display (Priority: P2)
 
@@ -94,7 +95,7 @@ As an OpenChamber user, I want to see spend caps, lifetime limits, and prepaid b
 
 **Acceptance Scenarios**:
 
-1. **Given** a spend cap or lifetime limit with a current value and a known maximum but no reset time, **when** it is displayed, **then** it shows a bar for remaining versus maximum, no reset time, and no even-use benchmark.
+1. **Given** a spend cap or lifetime limit with a current value and a known maximum but no reset time, **when** it is displayed, **then** it shows a bar for remaining or used versus maximum, following the display setting, with no reset time or even-use benchmark.
 2. **Given** a prepaid balance, **when** it is displayed, **then** it shows as a number without a bar, benchmark, or reset time.
 
 ### User Story 4 - See Supported Providers (Priority: P2)
@@ -127,7 +128,7 @@ As an OpenChamber user, I want providers with quota data to be available, includ
 ### Functional Requirements
 
 - **FR-001 (REQ 3)**: The quota display MUST appear as a new Quotas section in OpenChamber's Work Status panel beside the chat. A rail tab or a separate panel MUST NOT substitute for it. The section MUST load only while the panel is visible and the section is expanded.
-- **FR-002 (REQ 1)**: Each displayed resetting window MUST use a colored bar to distinguish actual quota remaining from the even-use benchmark on the same scale, and MUST show when the window resets. The benchmark is the fraction of the full window still remaining: 100% at the start, 50% halfway through, and 0% at reset. If only the benchmark cannot be calculated, show the actual quota bar and reset time without the benchmark or a note. FR-003 applies when actual quota or reset time is unavailable.
+- **FR-002 (REQ 1)**: Each displayed resetting window MUST use a colored bar to distinguish actual quota from the even-use benchmark on the same scale, and MUST show when the window resets. In Remaining mode the benchmark is the fraction of the full window still remaining: 100% at the start, 50% halfway through, and 0% at reset. In Used mode it is the elapsed fraction. If only the benchmark cannot be calculated, show the actual quota bar and reset time without the benchmark or a note. FR-003 applies when actual quota or reset time is unavailable.
 - **FR-003 (REQ 1)**: If remaining quota or reset time is unavailable for an individual window, an error message MUST replace that window's bar without replacing healthy windows' bars. If loading or refreshing an entire selected provider fails, the panel MUST show one error for that provider and no old bars from it, without hiding healthy providers.
 - **FR-004 (REQ 2)**: The plugin MUST support user-defined providers plus OpenAI Codex, OpenCode Go, OpenRouter, Tavily, and OpenCode Zen. It MUST NOT read OpenChamber's credential store. Providers outside this list are not required until added to REQ 2.
 - **FR-005 (REQ 4)**: Users MUST be able to choose which supported providers appear, for each provider with multiple windows, which windows appear, and whether a provider's non-reporting balances are hidden. Preserve one set of selections per OpenChamber instance across sessions and restarts. Before any selections are saved, show all available windows from supported configured providers, including eligible custom providers already set up. A saved empty selection is not first use.
@@ -138,8 +139,9 @@ As an OpenChamber user, I want providers with quota data to be available, includ
 - **FR-010 (REQ 1)**: While a fetch is in progress, keep existing bars only for windows whose reset time has not arrived. Show loading for a first fetch or a window whose reset time has arrived, including while waiting for provider limits to allow a fetch. When the fetch finishes, show the new values, the applicable error, or the empty-state message under FR-012.
 - **FR-011 (REQ 4)**: After selections are saved, a newly added eligible provider MUST appear automatically with all its current windows. A newly reported window type for an already configured provider MUST be selectable but MUST NOT appear until the user enables it. Preserve a window type's selection across reset cycles.
 - **FR-012 (REQ 1/4)**: Show a setup hint when no eligible providers are configured, a selection hint when the user's selections hide all quotas, and a provider-specific message when a successful response from a selected provider reports no windows. A failed response follows FR-003, not the empty-state rule.
-- **FR-013 (REQ 2)**: Show a spend cap or lifetime limit that has a current value and a known maximum as a bar of remaining versus maximum (`limit - used` against `limit`), without a reset time or even-use benchmark. Show a prepaid balance as a number without a bar, benchmark, or reset time. Never invent a reset for either. A provider that exposes only values covered by this requirement remains eligible under FR-004.
+- **FR-013 (REQ 2)**: Show a spend cap or lifetime limit that has a current value and a known maximum as a bar of remaining or used versus maximum, without a reset time or even-use benchmark. Show a prepaid balance as a number without a bar, benchmark, or reset time. Never invent a reset for either. A provider that exposes only values covered by this requirement remains eligible under FR-004.
 - **FR-014 (REQ 1)**: Show reset times as relative time by default. Provide one instance-scoped setting to switch to absolute time. In absolute mode, a reset within 24 hours shows only the time; a reset within 7 days shows the weekday and time; a reset 7 or more days away shows the date only. The setting follows the same persistence rules as display selections.
+- **FR-015 (REQ 1)**: Provide one instance-scoped setting to switch all window and cap bars and values from Remaining (default) to Used. Colors still follow FR-007 and balances are unchanged.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -147,7 +149,7 @@ As an OpenChamber user, I want providers with quota data to be available, includ
 - **Quota window**: The current cycle of a quota allocation, with remaining quota, an even-use estimate, and reset time when available.
 - **Window type**: A recurring quota allocation from a provider, such as a daily window; its selection applies to each reset cycle.
 - **Display selection**: The providers and, where applicable, window types the user has chosen to show, scoped to one OpenChamber instance.
-- **Display preference**: An instance-scoped display choice, including the danger cutoff and whether reset times are relative or absolute.
+- **Display preference**: An instance-scoped display choice, including the quota display mode, danger cutoff, and whether reset times are relative or absolute.
 - **Quota format**: A supported way for a provider to report its quota windows and values.
 - **Cap**: A non-resetting spend or usage limit with a remaining value and a known maximum.
 - **Prepaid balance**: A non-resetting amount that runs down as the user spends it.
@@ -166,6 +168,7 @@ As an OpenChamber user, I want providers with quota data to be available, includ
 - **SC-008**: Verify distinct outcomes for no eligible providers configured, all quotas hidden by selection, and a selected provider reporting no windows. A provider failure remains an error, not an empty state.
 - **SC-009**: Verify that a spend cap and a lifetime limit each show a remaining-versus-maximum bar with no reset or benchmark, and that a prepaid balance shows a number with no bar. Verify that neither display invents a reset or benchmark.
 - **SC-010**: Verify relative reset time on first use, the absolute 24-hour/weekday/date formats after the user switches the setting, and that the choice survives a session switch and restart on the same instance.
+- **SC-011**: Verify the default Remaining view, the matching Used values and benchmark after switching, and restoration of the choice on reopening. Verify that switching mode does not change colors, resets, balances, or provider/window selection.
 
 ## Assumptions
 
@@ -177,7 +180,7 @@ As an OpenChamber user, I want providers with quota data to be available, includ
 ## Resolved Decisions
 
 - **REQ 1 — Refresh and failure states:** Resolved. The section loads the snapshot every 5 seconds, attempts a refresh on mount, every 60 seconds, at reset, and manually. The service enforces provider limits and schedules a retry when an attempt is blocked. Host timing remains a verification item.
-- **REQ 1 — Display details:** Resolved. Rows show remaining percentage and reset time; relative time is the default. The countdown refreshes from the snapshot poll.
+- **REQ 1 — Display details:** Resolved. Rows show quota remaining by default, or quota used when configured. Reset times are relative by default. The countdown refreshes from the snapshot poll.
 - **REQ 2/3 — Host integration and provider coverage:** Resolved for OpenChamber 2.8.0. A local guest service owns provider I/O and credentials. Live Zen key support, Codex token lifetime, CA trust, and load/unload timing remain verification items.
 - **REQ 4 — Selection behavior:** Resolved. Removed providers retain their window selection. A newly added provider is auto-enabled with its current windows; a newly reported window type stays opt-in.
 - **REQ 5 — Custom provider setup:** Resolved. Add, edit, and remove are in Quota settings; custom labels are unique; one supported format, no mappings.

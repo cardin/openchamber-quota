@@ -10,6 +10,7 @@ import {
   saveSelection,
   setBalancesHidden,
   setCutoff,
+  setQuotaDisplay,
   setResetTime,
   toggleProvider,
   toggleWindow,
@@ -31,6 +32,23 @@ describe("preferences", () => {
     const storage = memory();
     expect(await loadSelection(storage)).toEqual(DEFAULT_SELECTION);
     expect(isProviderVisible(DEFAULT_SELECTION, "anything")).toBe(true);
+  });
+
+  test("saves the quota display mode without changing provider or window selection", async () => {
+    const storage = memory();
+    await storage.set(SELECTION_KEY, { saved: false, quotaDisplay: "unknown" });
+    const original = await loadSelection(storage);
+    expect(original.quotaDisplay).toBe("remaining");
+
+    await saveSelection(storage, setQuotaDisplay(original, "used"));
+    expect(await loadSelection(storage)).toEqual({ ...original, quotaDisplay: "used" });
+
+    const selected = toggleProvider(original, "tavily", [{ id: "tavily", windows: ["plan"] }]);
+    await saveSelection(storage, setQuotaDisplay(selected, "used"));
+    const restored = await loadSelection(storage);
+    expect(restored).toEqual({ ...selected, quotaDisplay: "used" });
+    await saveSelection(storage, setQuotaDisplay(restored, "remaining"));
+    expect(await loadSelection(storage)).toEqual(selected);
   });
 
   test("saves selections and persists an empty selection", async () => {
@@ -64,6 +82,7 @@ describe("preferences", () => {
     expect(value.hiddenBalances).toEqual(["x"]);
     expect(value.cutoffPercent).toBe(100);
     expect(value.resetTime).toBe("absolute");
+    expect(value.quotaDisplay).toBe("remaining");
   });
 
   test("migrates a legacy Tavily provider without a window list to all monthly windows", async () => {

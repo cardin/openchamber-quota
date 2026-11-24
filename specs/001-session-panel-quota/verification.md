@@ -38,6 +38,7 @@
 | — | Live OpenCode Go | Pending | Needs a key |
 | — | Live Codex | Pending | Needs `~/.codex/auth.json` |
 | — | Live OpenCode Zen | Pending | Needs a key/token; verify key acceptance |
+| 2026-11-24 | Remaining/Used display mode | Pass | Extension 0.2.0; settings choice persisted; simulated settings→section round trip switched a 25%-remaining window to 75% used with a 25% benchmark, kept warning color, and showed a cap as 10 / 50; 97 tests, typecheck, build |
 | — | Full quickstart (T053) | Partial | Isolated fixture checks passed; still needs live accounts, corporate CA, and a separate session-switch check |
 
 ## Local service smoke command

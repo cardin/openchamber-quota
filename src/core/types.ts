@@ -99,6 +99,7 @@ export type DisplaySelection = {
   hiddenBalances: string[];
   cutoffPercent: number;
   resetTime: "relative" | "absolute";
+  quotaDisplay: "remaining" | "used";
 };
 
 export const DEFAULT_SELECTION: DisplaySelection = {
@@ -108,4 +109,5 @@ export const DEFAULT_SELECTION: DisplaySelection = {
   hiddenBalances: [],
   cutoffPercent: 10,
   resetTime: "relative",
+  quotaDisplay: "remaining",
 };

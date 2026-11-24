@@ -49,6 +49,12 @@ export const renderSelector = (snapshot: Snapshot, selection: DisplaySelection):
       ${providers || `<p class="quota-muted">No configured providers.</p>`}
     </div>
     <div class="quota-preferences">
+      <label class="quota-preference">Show quota as
+        <select data-quota-display>
+          <option value="remaining" ${selection.quotaDisplay === "remaining" ? "selected" : ""}>Remaining</option>
+          <option value="used" ${selection.quotaDisplay === "used" ? "selected" : ""}>Used</option>
+        </select>
+      </label>
       <label class="quota-preference">Danger cutoff
         <input type="number" min="0" max="100" step="1" data-cutoff value="${selection.cutoffPercent}" /> %
       </label>

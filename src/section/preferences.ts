@@ -37,6 +37,7 @@ export const normalizeSelection = (value: unknown): DisplaySelection => {
     hiddenBalances,
     cutoffPercent: cutoff,
     resetTime: value.resetTime === "absolute" ? "absolute" : "relative",
+    quotaDisplay: value.quotaDisplay === "used" ? "used" : DEFAULT_SELECTION.quotaDisplay,
   };
 };
 
@@ -191,3 +192,8 @@ export const setResetTime = (
   selection: DisplaySelection,
   resetTime: DisplaySelection["resetTime"],
 ): DisplaySelection => ({ ...selection, resetTime });
+
+export const setQuotaDisplay = (
+  selection: DisplaySelection,
+  quotaDisplay: DisplaySelection["quotaDisplay"],
+): DisplaySelection => ({ ...selection, quotaDisplay });

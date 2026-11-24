@@ -4,6 +4,8 @@ import { barState } from "../../src/section/view/status.ts";
 import { renderBalance, renderCap, renderProvider, renderWindow } from "../../src/section/view/window.ts";
 import { fixtureSnapshot, NOW } from "../fixtures/provider.ts";
 
+const usedSelection = { ...DEFAULT_SELECTION, quotaDisplay: "used" as const };
+
 describe("display", () => {
   test("25% halfway shows a warning bar and a 50% benchmark", () => {
     const html = renderWindow(
@@ -27,6 +29,51 @@ describe("display", () => {
     expect(html).toContain("state-danger");
     expect(html).toContain("width:0.00%");
     expect(html).toContain("left:50.00%");
+  });
+
+  test("used mode mirrors the fill and benchmark but keeps the warning and reset", () => {
+    const window = {
+      id: "daily", label: "Daily", remainingPercent: 25, resetAt: "2026-11-24T06:00:00Z", durationSeconds: 86_400,
+    };
+    const html = renderWindow(window, usedSelection, NOW);
+    expect(html).toContain("width:75.00%");
+    expect(html).toContain("left:25.00%");
+    expect(html).toContain(">75%<");
+    expect(html).toContain("Daily 75% used, resets");
+    expect(html).toContain("Even-use benchmark 25% used");
+    expect(html).toContain("state-warning");
+    expect(html).toContain(">18h<");
+  });
+
+  test("used mode shows actual credits and caps, but leaves balances unchanged", () => {
+    const provider = {
+      ...fixtureSnapshot().providers[0],
+      windows: [{
+        id: "plan", label: "Credits", remainingPercent: 82.1, resetAt: "2026-12-01T00:00:00Z",
+        used: { value: 179, unit: "credits" }, limit: { value: 1000, unit: "credits" },
+      }],
+    };
+    const html = renderProvider(provider, usedSelection, NOW);
+    expect(html).toContain("179 / 1000");
+    expect(html).toContain("width:17.90%");
+    expect(html).toContain("$12.50 / $50.00");
+    expect(html).toContain("width:25.00%");
+    expect(html).toContain("Monthly spend 25% used");
+    expect(html).not.toContain("quota-benchmark");
+    expect(html).toContain(renderBalance(provider.balances[0]));
+  });
+
+  test("used mode fills exhausted quotas and keeps the actual amount for an over-limit cap", () => {
+    const window = { id: "daily", label: "Daily", remainingPercent: 0, resetAt: "2026-11-24T00:00:00Z" };
+    const html = renderWindow(window, usedSelection, NOW);
+    expect(html).toContain("width:100.00%");
+    expect(html).toContain("state-danger");
+    expect(html).not.toContain("quota-benchmark");
+    expect(renderWindow({ ...window, remainingPercent: 100 }, usedSelection, NOW)).toContain("width:0.00%");
+
+    const cap = renderCap({ id: "cap", label: "Credits", used: 110, limit: 100, unit: "credits" }, "used");
+    expect(cap).toContain("110 / 100");
+    expect(cap).toContain("width:100.00%");
   });
 
   test("missing reset shows an error, not a bar", () => {

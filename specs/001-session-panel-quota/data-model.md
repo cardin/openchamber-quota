@@ -111,6 +111,7 @@ Stored in instance-scoped `host.storage` under `quota.display.v1`.
 | `hiddenBalances` | string[] | Connection ids whose non-reporting balances are hidden from the panel. The settings checkbox is checked by default; unchecking adds the provider here. |
 | `cutoffPercent` | number | 0–100; default 10. Strictly below triggers danger. |
 | `resetTime` | `relative` / `absolute` | Default `relative`. Absolute shows time only within 24 hours, weekday and time within 7 days, and date only at 7+ days. |
+| `quotaDisplay` | `remaining` / `used` | Default `remaining`, including for older stored records. Presentation only; does not change provider or window selection. |
 | `tavilyMonthlyWindowsMigrated` | boolean? | Stored marker; `true` after migration or when saving with the current format. |
 
 First use shows every provider with a connection and every window it reports. After `saved: true`, only selected items are shown, including an explicitly empty selection. A newly added provider is enabled automatically with its current windows. Removing a provider hides it but keeps its selection so a returning provider restores its previous windows. In a record without the migration marker, an enabled Tavily provider with no window list is migrated to `plan`, `key`, and `paygo`. Existing lists, including empty and plan-only lists, are preserved.

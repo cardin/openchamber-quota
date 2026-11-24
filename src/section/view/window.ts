@@ -49,29 +49,33 @@ export const renderWindow = (
     </div>`;
   }
   const remaining = window.remainingPercent;
+  const mode = selection.quotaDisplay;
+  const showUsed = mode === "used";
+  const percent = showUsed ? 100 - remaining : remaining;
   const rawLimit = window.limit;
   const rawUsed = window.used;
   const rawValue =
     rawLimit && rawUsed
-      ? `${Math.max(0, rawLimit.value - rawUsed.value)} / ${rawLimit.value}${
+      ? `${showUsed ? rawUsed.value : Math.max(0, rawLimit.value - rawUsed.value)} / ${rawLimit.value}${
           window.label.toLowerCase().includes(rawLimit.unit.toLowerCase())
             ? ""
             : ` ${rawLimit.unit}`
         }`
-      : `${remaining.toFixed(0)}%`;
+      : `${percent.toFixed(0)}%`;
   const benchmark = benchmarkPercent(window, now);
   const state = barState(remaining, benchmark, selection.cutoffPercent);
+  const displayBenchmark = showUsed && benchmark !== null ? 100 - benchmark : benchmark;
   const shortReset = formatResetShort(window.resetAt, selection.resetTime, now);
   const fullReset = formatReset(window.resetAt, selection.resetTime, now);
   const benchmarkMark =
-    benchmark === null
+    displayBenchmark === null
       ? ""
-      : `<span class="quota-benchmark" style="left:${benchmark.toFixed(2)}%" title="Even-use benchmark ${benchmark.toFixed(0)}%"></span>`;
+      : `<span class="quota-benchmark" style="left:${displayBenchmark.toFixed(2)}%" title="Even-use benchmark ${displayBenchmark.toFixed(0)}% ${mode}"></span>`;
   return `
     <div class="quota-row quota-row-line quota-row-window" data-window="${escapeAttr(window.id)}">
       <span class="quota-label">${label(window.label)}</span>
-      <div class="quota-bar ${stateClass(state)}" role="img" aria-label="${escapeAttr(window.label)} ${remaining.toFixed(0)}% remaining, resets ${escapeAttr(fullReset)}">
-        <span class="quota-fill" style="width:${remaining.toFixed(2)}%"></span>
+      <div class="quota-bar ${stateClass(state)}" role="img" aria-label="${escapeAttr(window.label)} ${percent.toFixed(0)}% ${mode}, resets ${escapeAttr(fullReset)}">
+        <span class="quota-fill" style="width:${percent.toFixed(2)}%"></span>
         ${benchmarkMark}
       </div>
       <span class="quota-value">${escapeHtml(rawValue)}</span>
@@ -79,19 +83,20 @@ export const renderWindow = (
     </div>`;
 };
 
-export const renderCap = (cap: Cap): string => {
-  const remaining = capRemaining(cap);
-  const percent = capRemainingPercent(cap);
+export const renderCap = (cap: Cap, mode: DisplaySelection["quotaDisplay"] = "remaining"): string => {
+  const amount = mode === "used" ? cap.used : capRemaining(cap);
+  const remainingPercent = capRemainingPercent(cap);
+  const percent = mode === "used" && cap.limit > 0 ? 100 - remainingPercent : remainingPercent;
   const value =
     cap.unit === "USD"
-      ? `${formatAmount(remaining, cap.unit)} / ${formatAmount(cap.limit, cap.unit)}`
+      ? `${formatAmount(amount, cap.unit)} / ${formatAmount(cap.limit, cap.unit)}`
       : cap.label.toLowerCase().includes(cap.unit.toLowerCase())
-        ? `${remaining} / ${cap.limit}`
-        : `${remaining} / ${cap.limit} ${cap.unit}`;
+        ? `${amount} / ${cap.limit}`
+        : `${amount} / ${cap.limit} ${cap.unit}`;
   return `
     <div class="quota-row quota-row-line quota-row-cap" data-cap="${escapeAttr(cap.id)}" title="no reset">
       <span class="quota-label">${label(cap.label)}</span>
-      <div class="quota-bar" role="img" aria-label="${escapeAttr(cap.label)} ${percent.toFixed(0)}% remaining">
+      <div class="quota-bar" role="img" aria-label="${escapeAttr(cap.label)} ${percent.toFixed(0)}% ${mode}">
         <span class="quota-fill" style="width:${percent.toFixed(2)}%"></span>
       </div>
       <span class="quota-value">${escapeHtml(value)}</span>
@@ -130,7 +135,7 @@ export const renderProvider = (
   const windows = provider.windows.length
     ? `<div class="quota-window-rows">${provider.windows.map((window) => renderWindow(window, selection, now)).join("")}</div>`
     : "";
-  const caps = provider.caps.map(renderCap).join("");
+  const caps = provider.caps.map((cap) => renderCap(cap, selection.quotaDisplay)).join("");
   const balances = visibleBalances(provider.balances).map(renderBalance).join("");
   const refreshing = provider.refreshing
     ? `<div class="quota-row-loading" role="status">Refreshing…</div>`

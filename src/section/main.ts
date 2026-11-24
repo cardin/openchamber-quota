@@ -94,8 +94,11 @@ const render = (): void => {
       ? visible.map((provider) => renderProvider(provider, selection, now)).join("")
       : renderEmpty((snapshot.providers.length ?? 0) > 0, visible.length > 0);
 
+  const showUsed = selection.quotaDisplay === "used" &&
+    visible.some((provider) => provider.state === "ok" && (provider.windows.length > 0 || provider.caps.length > 0));
   root.innerHTML = `${headerControl ? "" : `<button type="button" class="quota-icon-button" data-action="refresh" aria-label="Refresh quota" title="Refresh">${refreshIcon}</button>`}
   ${error ? `<div class="quota-error" role="alert">${escapeHtml(error)}</div>` : ""}
+  ${showUsed ? '<div class="quota-meta">Quota used</div>' : ""}
   ${body}`;
   root.classList.toggle("body-refresh", !headerControl);
   scheduleHeightReport();

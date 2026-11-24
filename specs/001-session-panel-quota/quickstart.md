@@ -25,7 +25,7 @@ Open **Quota settings** from the sidebar's **Pages** section, then:
 3. Add a custom provider pointing at a fixture endpoint (see [custom-provider-v1](contracts/custom-provider-v1.md)).
 4. Add **OpenAI / Codex**. Run `codex login` first; the service imports `~/.codex/auth.json` and no key is typed.
 5. Optionally add OpenCode Go and Zen keys.
-6. Choose the providers/windows to show, the danger cutoff, and the reset-time format. A newly added provider appears automatically with its current windows; a new window type for an existing provider stays opt-in.
+6. Choose the providers/windows to show, Remaining or Used, the danger cutoff, and the reset-time format. A newly added provider appears automatically with its current windows; a new window type for an existing provider stays opt-in.
 
 Secrets are sent only to the local service and never returned. The section keeps only display preferences.
 
@@ -38,6 +38,7 @@ Secrets are sent only to the local service and never returned. The section keeps
 | OpenRouter window | Add a key with a limit | Remaining bar, reset, and benchmark when the duration is known. |
 | OpenRouter unlimited | Add a key without a limit | Spend or balance shown; no percentage bar. |
 | Custom benchmark | Fixture window: 25% remaining, halfway through | Bar at 25%, benchmark at 50%. |
+| Quota display mode | Switch to Used with a 25%-remaining window one-quarter through its duration and a `$12.50 / $50.00` used cap | Window at 75%, benchmark at 25%, warning unchanged; cap at 25%. Reopen the panel and check that Used is still selected. |
 | Missing reset | Fixture window without `resetAt` | Window error replaces that bar; no invented reset. |
 | Provider failure | Use a bad key for one provider | One provider error; other providers stay visible. |
 | Hidden panel | Collapse the section, wait 2 minutes, reopen | No refresh while collapsed; data refreshes on reopen. |

@@ -1,6 +1,6 @@
 # OpenChamber Quota Display
 
-A Work Status section for OpenChamber that shows quota remaining, the even-use benchmark, reset times, caps, and balances.
+A Work Status section for OpenChamber that shows quota remaining or used, the even-use benchmark, reset times, caps, and balances.
 
 ## How it works
 
@@ -28,6 +28,7 @@ Open **Quota settings** from the sidebar's **Pages** section. The Pages entry is
 - Add or remove providers, test a connection, and set the CA bundle path.
 - View non-resetting balances such as Tavily PAYG usage, with a per-provider option to hide them.
 - Choose which providers and windows appear in the panel.
+- Under **Display → Show quota as**, choose **Remaining** (default) or **Used** for windows and caps.
 - Set the danger cutoff and relative/absolute reset time.
 
 The Work Status section is display-only. Its header has a single refresh icon.
