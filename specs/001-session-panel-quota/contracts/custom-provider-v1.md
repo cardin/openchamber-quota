@@ -48,5 +48,5 @@ Requirements:
 
 - At most 20 windows, 20 caps, and 20 balances.
 - `id` and `label` are 1–80 and 1–40 characters.
-- No scripts, field mappings, custom headers, or endpoint discovery.
+- No scripts, field mappings, custom headers, or endpoint discovery. The canonical schema is [custom-provider-v1.schema.json](../../../docs/contracts/custom-provider-v1.schema.json).
 - The API key is sent only to the configured origin.

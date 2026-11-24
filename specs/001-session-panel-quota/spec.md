@@ -6,6 +6,8 @@
 
 **Status**: Implemented (host and local verification complete; live provider checks in progress)
 
+**Reconciliation**: [reconciliation.md](reconciliation.md) — partial, 2026-11-24.
+
 **Input**: [Living requirements](../../docs/REQUIREMENTS.md). This spec covers the amended REQ 1–5: the named provider set, the Work Status section, and user-defined providers. It does not amend the living requirements.
 
 ## Clarifications

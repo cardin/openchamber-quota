@@ -14,7 +14,7 @@ Requests and responses are JSON, UTF-8, at most 64 KiB. The service never return
 
 ## Snapshot
 
-`GET /snapshot` → `200` [QuotaSnapshot](quota-snapshot.schema.json)
+`GET /snapshot` → `200` [QuotaSnapshot](../../../docs/contracts/quota-snapshot.schema.json)
 
 Returns the current cached snapshot. It does not fetch upstream unless the cache is older than the provider's interval; the service may start a background refresh and set `refreshing`.
 

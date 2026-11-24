@@ -14,7 +14,7 @@ import { customPayload, fixtureSnapshot, NOW, RESET } from "../fixtures/provider
 
 const schema = (name: string) =>
   addFormats(new Ajv2020({ allErrors: true, strictTypes: false }), ["date-time"]).compile(
-    JSON.parse(readFileSync(new URL(`../../specs/001-session-panel-quota/contracts/${name}`, import.meta.url), "utf8")),
+    JSON.parse(readFileSync(new URL(`../../docs/contracts/${name}`, import.meta.url), "utf8")),
   );
 
 const contractFixture = () => {

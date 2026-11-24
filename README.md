@@ -43,7 +43,7 @@ bun test
 bun run build
 ```
 
-Contracts and the data model are in `specs/001-session-panel-quota/`.
+Living requirements, design, interfaces, decisions, and the test plan are in `docs/`. The feature working record and reconciliation manifest are in `specs/001-session-panel-quota/`.
 
 ## Known gaps
 

@@ -19,5 +19,7 @@ The plugin must display its quota UI in OpenChamber's Session Panel.
 ## REQ 4
 Users must be able to choose which supported providers to display and, for each provider with multiple quota windows, which windows to display.
 
+Selections are saved per OpenChamber instance and survive restarts. Before any selection is saved, show all windows from configured providers. After saving, a newly added provider appears with its current windows; a newly reported window type stays hidden until enabled. Non-reporting balances are shown by default and can be hidden per provider.
+
 ## REQ 5
-Users must be able to include their own custom providers.
+Users must be able to include their own custom providers. A custom provider supplies a label, HTTPS endpoint, and key using the supported quota format; no field mapping or format picker is offered.

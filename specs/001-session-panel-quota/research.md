@@ -48,7 +48,7 @@
 
 ## Custom provider format
 
-One versioned, read-only JSON format, `openchamber-quota-v1`, with optional windows, caps, and a balance. Windows require `id`, `label`, `remainingPercent`, and `resetsAt`; `durationSeconds` is optional and controls the benchmark. Caps require `id`, `label`, `used`, `limit`, and `unit`. No field mapping, scripts, custom headers, or endpoint discovery. See [the schema](contracts/custom-provider-v1.schema.json).
+One versioned, read-only JSON format, `openchamber-quota-v1`, with optional windows, caps, and a balance. Windows require `id`, `label`, `remainingPercent`, and `resetsAt`; `durationSeconds` is optional and controls the benchmark. Caps require `id`, `label`, `used`, `limit`, and `unit`. No field mapping, scripts, custom headers, or endpoint discovery. See [the schema](../../docs/contracts/custom-provider-v1.schema.json).
 
 ## Normalization and refresh
 

@@ -39,7 +39,7 @@ description: "Task list for Session Panel quota display"
 - [X] T010 [P] Add `tests/contract/service-api.test.ts` validating `/health` and `/snapshot` against the contracts; write it before the snapshot route exists and confirm it fails.
 - [X] T011 [P] Implement the section shell in `src/section/index.html` and `src/section/main.ts`: `connectHost()`, `applyHostReady()`, call `host.serviceRequest({ method: "GET", path: "/snapshot" })`, render a placeholder, and read `host.storage` without writing secrets.
 - [X] T012 [P] Add a fixture provider in `tests/fixtures/provider.ts` returning one window at 25% remaining halfway through a one-day window, one zero window, one missing-reset window, one cap, one balance, and one failing provider.
-- [X] T013 Implement `src/service/snapshot.ts` and wire it into `routes.ts`: `GET /snapshot`, `POST /refresh` returning `202 { accepted: true }`, `cache.json` for the next mount, and `refreshing` flags. Validate every response against `contracts/quota-snapshot.schema.json`.
+- [X] T013 Implement `src/service/snapshot.ts` and wire it into `routes.ts`: `GET /snapshot`, `POST /refresh` returning `202 { accepted: true }`, `cache.json` for the next mount, and `refreshing` flags. Validate every response against `docs/contracts/quota-snapshot.schema.json`.
 - [X] T014 Host smoke test: build, install the folder in OpenChamber, confirm the service starts, `GET /health` succeeds through `host.serviceRequest`, and a fixture `/snapshot` renders in the Work Status section. Record the result in `specs/001-session-panel-quota/verification.md`.
 
 **Checkpoint**: The service round-trip works end to end. Only now start user stories.
@@ -233,7 +233,7 @@ T047 remains open for custom, Codex, and Zen live checks; Tavily, OpenRouter, an
 ## Phase 8: Convergence
 
 - [X] T058 Extend the one-time Tavily selection migration to enable `plan`, `key`, and `paygo` windows for legacy saved selections, preserve an explicitly empty Tavily window list, and use a version/flag so unchecked windows are not re-added per FR-005/FR-013 (partial)
-- [X] T059 Add runtime validation of the full Snapshot against `contracts/quota-snapshot.schema.json` at the service boundary and a test using actual service output per T013 (partial)
+- [X] T059 Add runtime validation of the full Snapshot against `docs/contracts/quota-snapshot.schema.json` at the service boundary and a test using actual service output per T013 (partial)
 - [X] T060 Update `plan.md`, `research.md`, and the `tasks.md` notes to describe Tavily plan, key, and PAYG monthly windows plus the PAYG balance fallback per plan: Tavily adapter decision (contradicts)
 - [X] T061 Add fake-timer tests for `SnapshotController.start()` and `stop()` timer cleanup, including no timers after stop/unmount per T051 (partial)
 - [X] T062 Add contrast and focus-order checks to the accessibility tests, or explicitly narrow T050 to the checks that are actually covered per T050 (partial)

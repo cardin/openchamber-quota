@@ -8589,7 +8589,7 @@ var assertAdapterResult = (result) => {
 // src/service/snapshot-schema.ts
 var import__2020 = __toESM(require__2020(), 1);
 var import_ajv_formats = __toESM(require_dist(), 1);
-// specs/001-session-panel-quota/contracts/quota-snapshot.schema.json
+// docs/contracts/quota-snapshot.schema.json
 var quota_snapshot_schema_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $id: "https://openchamber-quota.local/contracts/quota-snapshot.schema.json",
