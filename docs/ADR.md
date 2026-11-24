@@ -1,9 +1,5 @@
 # Architecture Decisions
 
-> Provisional — feature `001-session-panel-quota`: provider coverage and final acceptance remain subject to Codex/Zen OAuth work.
-> See `specs/001-session-panel-quota/spec.md`.
-<!-- provisional:feature=001-session-panel-quota -->
-
 ## ADR-001: Use a Work Status section and a Pages settings page
 
 **Status:** Accepted (2026-11-23)

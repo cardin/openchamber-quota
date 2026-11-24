@@ -6,5 +6,6 @@
 - [Decisions](ADR.md) — architecture decision records.
 - [Test plan](TESTPLAN.md) — automated coverage, accessibility checks, and gaps.
 - [Contracts](contracts/README.md) — canonical JSON Schemas.
+- [Outstanding work](outstanding.md) — deferred provider work and verification gaps.
 
-The feature working record and reconciliation manifest are in [`specs/001-session-panel-quota/`](../specs/001-session-panel-quota/).
+The Session Panel quota feature closed on 2026-11-25. Its decisions remain in [ADR.md](ADR.md); deferred provider work and remaining verification are in [outstanding.md](outstanding.md).
