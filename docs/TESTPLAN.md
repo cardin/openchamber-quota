@@ -25,11 +25,11 @@ Rechecked on 2026-11-25 at `7d4757d`: typecheck, 107 Bun tests, 4 Playwright acc
 | REQ 4 / SC-003, SC-008 | `tests/unit/preferences.test.ts`, `tests/integration/us2.test.ts`, `empty.test.ts`; host preferences check | Pass |
 | REQ 5 / SC-005 | `tests/contract/connections.test.ts`, `tests/unit/credentials.test.ts`, `providers.test.ts` | Adapter, schema, and existing connections retained; setup hidden by ADR-007 |
 
-The Go adapter regression test checks that a missing Console 5h reset is recovered from the Go usage API without rounding the valid Console weekly or monthly meters. This fallback was checked with fixtures, not a live Go key.
+The Go adapter regression test checks that a missing Console 5h reset is recovered from the Go usage API without rounding the valid Console weekly or monthly meters. Live verification on 2026-11-25 confirmed the fallback supplies the missing 5h window.
 
 ## Manual verification
 
-The 2026-11-24 OpenChamber 2.8.0 baseline passed the guest package check and the host round-trip. Host fixtures checked missing and expired windows, isolated provider errors, mount/manual/periodic/reset refresh, and no refresh while collapsed. Preference and quota checks covered session switch, restart, instance isolation, caps and balances, and secret-free snapshots. The 0.2.x checks covered Remaining/Used, removal of the TLS setting, the key visibility eye, and hidden unverified providers. Live checks passed for the three setup options listed in the [README](../README.md#supported-providers); the user confirmed the full quickstart and session switch.
+The 2026-11-24 OpenChamber 2.8.0 baseline passed the guest package check and the host round-trip. Host fixtures checked missing and expired windows, isolated provider errors, mount/manual/periodic/reset refresh, and no refresh while collapsed. Preference and quota checks covered session switch, restart, instance isolation, caps and balances, and secret-free snapshots. The 0.2.x checks covered Remaining/Used, removal of the TLS setting, the key visibility eye, and hidden unverified providers. Live checks passed for the three setup options listed in the [README](../README.md#supported-providers), including the OpenCode Go missing-5h fallback on 2026-11-25; the user confirmed the full quickstart and session switch.
 
 To repeat the smoke check, follow [install](../README.md#install) and [configuration](../README.md#configure). Confirm that Quotas is in Work Status and the settings page is under Pages. Test connections, refresh and collapse/reopen, verify settings persist after restarting, and check that a separate data directory has no shared connections or selections. Use fixtures for malformed windows and whole-provider failures.
 
