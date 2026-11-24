@@ -69,6 +69,8 @@
   .quota-row-cap { grid-template-columns: 52px minmax(0, 1fr) auto; }
   .quota-row-line .quota-label { font-size: 11px; white-space: nowrap; }
   .quota-row-line .quota-bar { margin: 0; height: 3px; min-width: 40px; }
+  /* The lower Tavily row can snap one device pixel taller at fractional display scaling. */
+  .quota-provider[data-provider="tavily"] .quota-row-line .quota-bar { height: 2.5px; }
   .quota-row-line .quota-value { font-size: 11px; color: var(--oc-muted, inherit); white-space: nowrap; font-variant-numeric: tabular-nums; }
   .quota-row-line .quota-reset { font-size: 11px; color: var(--oc-muted, inherit); white-space: nowrap; text-align: right; justify-self: end; font-variant-numeric: tabular-nums; }
   .quota-row-balance { grid-template-columns: 1fr auto; }
