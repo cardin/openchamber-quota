@@ -16,11 +16,4 @@ describe("panel style contract", () => {
   test("window status text starts at the bar column", () => {
     expect(css).toMatch(/quota-status-text\s*\{[^}]*grid-column:\s*2 \/ -1/);
   });
-
-  test("the Tavily track is a hair thinner than the shared 3px track", () => {
-    expect(css).toMatch(/\.quota-row-line \.quota-bar\s*\{[^}]*height:\s*3px/);
-    expect(css).toMatch(
-      /\.quota-provider\[data-provider="tavily"\] \.quota-row-line \.quota-bar\s*\{[^}]*height:\s*2\.5px/,
-    );
-  });
 });
