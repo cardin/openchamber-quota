@@ -17,8 +17,10 @@
   h2 { font-size: 14px; }
   h3 { font-size: 13px; font-weight: 400; margin: 7px 0 2px; color: var(--oc-fg, inherit); }
   .quota-provider h3 { display: flex; align-items: center; position: relative; }
-  .quota-provider-icon { position: absolute; left: -19px; top: 50%; transform: translateY(-50%); display: inline-flex; width: 9px; height: 9px; flex: none; color: var(--oc-fg, inherit); opacity: .75; }
+  .quota-provider-icon { position: absolute; left: -19px; top: 50%; transform: translateY(-50%); display: inline-flex; width: 9px; height: 9px; flex: none; color: var(--oc-fg, inherit); }
   .quota-provider-icon svg { display: block; width: 100%; height: 100%; }
+  .quota-provider-icon svg:not(.quota-tavily-mark) { opacity: .75; }
+  :root[data-oc-theme="dark"] .quota-tavily-mark { fill: #FFFCF6; }
   button {
     border: 1px solid var(--oc-border, color-mix(in srgb, CanvasText 22%, transparent));
     border-radius: var(--oc-radius, 6px);

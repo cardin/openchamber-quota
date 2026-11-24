@@ -100,7 +100,6 @@ body {
   width: 14px;
   height: 14px;
   flex: none;
-  opacity: .7;
 }
 
 .quota-connection-icon svg {
@@ -262,13 +261,17 @@ body {
   width: 13px;
   height: 13px;
   flex: none;
-  opacity: .7;
 }
 
 .quota-select-icon svg {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+.quota-connection-icon svg:not(.quota-tavily-mark),
+.quota-select-icon svg:not(.quota-tavily-mark) {
+  opacity: .7;
 }
 
 .quota-select-label {

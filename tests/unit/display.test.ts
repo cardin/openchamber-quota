@@ -58,6 +58,14 @@ describe("display", () => {
     expect(html).not.toContain("quota-bar");
   });
 
+  test("Tavily heading uses the decorative brand mark", () => {
+    const provider = { ...fixtureSnapshot().providers[0], kind: "tavily" as const, label: "Tavily" };
+    const html = renderProvider(provider, DEFAULT_SELECTION, NOW);
+    expect(html).toContain('<span class="quota-provider-icon"><svg class="quota-tavily-mark"');
+    expect(html).toMatch(/class="quota-tavily-mark"[^>]*aria-hidden="true"/);
+    expect(html).toContain("</svg></span>Tavily</h3>");
+  });
+
   test("an expired window keeps its label and puts the status at the bar column", () => {
     const html = renderWindow(
       { id: "rolling", label: "5h", remainingPercent: 90, resetAt: "2026-11-23T11:59:00Z", durationSeconds: 18_000 },
