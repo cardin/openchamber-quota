@@ -31,7 +31,7 @@ The Go adapter regression test checks that a missing Console 5h reset is recover
 
 The 2026-11-24 OpenChamber 2.8.0 baseline passed the guest package check and the host round-trip. Host fixtures checked missing and expired windows, isolated provider errors, mount/manual/periodic/reset refresh, and no refresh while collapsed. Preference and quota checks covered session switch, restart, instance isolation, caps and balances, and secret-free snapshots. The 0.2.x checks covered Remaining/Used, removal of the TLS setting, the key visibility eye, and hidden unverified providers. Live checks passed for the three setup options listed in the [README](../README.md#supported-providers), including the OpenCode Go missing-5h fallback on 2026-11-25; the user confirmed the full quickstart and session switch.
 
-To repeat the smoke check, follow [install](../README.md#install) and [configuration](../README.md#configure). Confirm that Quotas is in Work Status and the settings page is under Pages. Test connections, refresh and collapse/reopen, verify settings persist after restarting, and check that a separate data directory has no shared connections or selections. Use fixtures for malformed windows and whole-provider failures.
+The historical smoke procedure above describes the implemented baseline. The intended upgrade changes settings scope to one OpenChamber server (ADR-011); do not treat old instance-isolation checks as proof of the new behavior. Verify two clients sharing one server, revision conflicts preserving independent edits, and separate server discovery/data remaining independent. Use disposable data to verify supported-state persistence, not an automatic reset; never modify OpenCode logins.
 
 ## Accessibility checks
 
@@ -48,4 +48,9 @@ Live host checks on 2026-11-24 measured settings text **4.95:1 / 5.99:1**, statu
 
 See the [backlog](BACKLOG.md) for deferred providers and remaining verification.
 
-- **ADR-009 (accepted, not implemented):** the quota-provider role needs contract checks that only declared provider credentials are accepted and used per read, that answers and snapshots stay secret-free, and that an expired OAuth credential is an auth error. It also needs a host check that the approval names the providers and re-prompts when the list changes. Until then the key-entry flow and its existing coverage stand.
+- **ADR-010/011/012 (accepted, not implemented):** verify scoped plugin credential resolution, whole-package approval vs post-approval plugin failure, Usage-hidden Quotas refresh, complete four-source results including cached/error acknowledgement, all-trigger scheduler coalescing/minimum/retryAt, one-second discovery vs ten-second total operation/twelve-second admission deadline, and historical values after expired resetAt with no live estimate or false refreshing. Verify first-success windows preserve pre-data hide/empty choice, settings shared across clients of one server with conflict-safe patches, multiple-server discovery ownership, and single-coordinator plugin contexts.
+- **Persistence/secrets (ADR-013):** verify supported Tavily/custom keys, shared settings and cache survive normal restart/reload without automatic clearing and OpenCode logins are untouched. Old development formats need no migration tests. No new copies of the four OpenCode credentials may leave OpenCode; supported Tavily/custom keys are intentionally allowed only in connections.json, not payloads/logs/UI. Inspect actual Windows ACLs rather than claiming the directory name proves restricted access.
+
+> Provisional — feature `002-opencode-credential-handoff`: all new checks above are pending; historical pass evidence does not cover them.
+> See `specs/002-opencode-credential-handoff/spec.md`.
+<!-- provisional:feature=002-opencode-credential-handoff -->

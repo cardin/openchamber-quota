@@ -2,46 +2,38 @@
 
 ## Surface
 
-The extension adds a **Quotas** status section to OpenChamber's Work Status panel. The section is display-only: it renders the snapshot plus a refresh control and stores only display preferences. Configuration lives in a separate **Quota settings** page under the sidebar's **Pages** entry. No OpenChamber source or credential store is used.
+Quotas remains a separate Session/Work Status panel section, with Quota settings under Pages. It is the sole extension quota display; the intended design adds no provider item inside the built-in Usage area. Existing code still uses a section iframe, settings iframe and local service. Manifest minimum is 2.7.3; prior installation verification used OpenChamber 2.8.0. New plugin capabilities remain a baseline verification gate.
 
-The manifest contributes `statusSection`, `page`, and a host-runtime `service`. The manifest minimum is OpenChamber 2.7.3; the [install instructions](../README.md#install) use the verified 2.8.0 baseline. Web and desktop load the extension; VS Code does not.
+## Implemented baseline
 
-## Components
+`src/section/` renders a secret-free service snapshot, polls every five seconds and asks for refresh on mount, every 60 seconds, manually and at reset. `src/settings/` edits locally stored provider connections and instance-scoped host.storage preferences. `src/service/` uses HTTPS adapters, coalesces stored-key requests, caches snapshots and keeps credentials out of UI responses. This baseline is not yet the plugin/server-shared design below.
 
-- **Status section** (`src/section/`): the host mounts it only while Work Status is visible and Quotas is expanded. It renders providers, windows, caps, and balances, polls the snapshot every five seconds for countdowns, and requests a refresh on mount, every 60 seconds, manually, and at reset. The manual control is in the header when supported, with a body fallback. Timers stop when the frame unloads.
-- **Settings page** (`src/settings/`): creates, tests, edits, and removes the currently offered provider connections; exposes display selection, Remaining/Used mode, danger cutoff, reset-time format, and usage balances. Codex, Zen, and custom setup are hidden but existing connections remain editable. The key field is masked by default and has an in-field show/hide eye.
-- **Local service** (`src/service/`): a loopback HTTP service started by OpenChamber. It validates the host token, owns credentials, fetches provider APIs through adapters, coalesces refreshes, caches the last snapshot, and returns a secret-free snapshot.
-- **Normalization** (`src/core/`): clamps percentages, computes the even-use benchmark, formats reset times, and keeps caps and balances distinct from resetting windows.
+## Intended acquisition and scheduling
 
-## Data flow
+An OpenCode plugin reads only selected OpenRouter, Go, Zen and Codex credentials inside OpenCode, fetches through shared adapters and sends complete four-provider readings to the service. Current Tavily/custom keys stay in the service. Package service/plugin permissions are approved together; plugin failure after approval is different from rejecting or disabling the whole package.
 
-`status section → host.serviceRequest → local service → provider HTTPS API`
+All refreshes cover all sources. Per-provider schedulers shared by every trigger decide fetch, cached result or in-flight reuse; manual refresh does not bypass minimums or Retry-After. Complete cached/error cycles still acknowledge their request id. Healthy one-second discovery is separate from the ten-second whole provider-operation budget; sequential fallback calls share one deadline. Allow one second for publication, twelve seconds from service admission and fifteen seconds for UI waiting. Timeout outcomes do not guarantee fresh quota.
 
-Display preferences use instance-scoped `host.storage`. Credentials and the snapshot cache stay in `OPENCHAMBER_SERVICE_DATA_DIR`. Snapshots contain no raw upstream bodies, endpoints, account IDs, or secrets. The separate connection metadata response includes a custom endpoint so the settings page can edit it, but no keys or account IDs.
+The Quotas section shows all sources independently of Usage visibility. Preserve last-success samples with age and an out-of-date notice through plugin outages and post-upgrade service restarts. Expired historical windows keep the sampled value, not an invented next reset/live even-use marker/endless refreshing message.
 
-**Intended (ADR-009, accepted, not implemented):** OpenCode-held provider credentials arrive through OpenChamber's quota-provider role instead of a second stored copy, starting with OpenRouter, OpenCode Go, and OpenCode Zen; Tavily and custom providers keep keys in `OPENCHAMBER_SERVICE_DATA_DIR`. Handed credentials remain per-read and are never persisted or returned.
+> Provisional — feature `002-opencode-credential-handoff`: acquisition, deadline and historical-display implementation is pending.
+> See `specs/002-opencode-credential-handoff/spec.md`.
+<!-- provisional:feature=002-opencode-credential-handoff -->
 
-## Refresh and failure states
+## Intended settings and discovery
 
-One refresh per provider may run at a time. Minimum intervals are five minutes by default and ten minutes for Tavily; `Retry-After` and `retryAt` delay retries. The section keeps unexpired bars during a refresh, shows loading for a first fetch or an expired window, replaces a single malformed window with a window error, and replaces a failed provider with one provider-level error while other providers stay visible. No configured providers, everything hidden by selection, and a successful provider response with no quota data have distinct messages.
+`display.json` and current `connections.json` in the extension service data directory are authoritative for everyone using that OpenChamber server. Clients read/reload and submit revisioned field changes through the service; conflicting updates reapply user intent without overwriting unrelated fields. host.storage is no longer authoritative.
 
-For resetting windows, danger takes precedence below the shared remaining-quota cutoff (10% by default). Otherwise, warning applies below a known even-use benchmark; the bar uses its default colour in other cases. Remaining and Used show the same data on opposite scales without changing the warning state.
+Record provider encounter separately from first successful window initialization, preserving explicit provider hides and empty window lists made before quota arrives. Automatic defaults reconcile once on the server. Different servers have separate data and `<serverId>.json` discovery entries, with ownership-checked cleanup and explicit binding (or sole verified live endpoint). Multiple plugin contexts for one server cannot create independent polling/fetch loops.
 
-## Provider adapters
+The pre-release extension has no external users, so old development formats need no migration or compatibility path. No automatic wipe, startup reset or storage epoch is introduced. Preserve supported Tavily/custom keys, shared settings and cache during normal operation; any developer cleanup is separate and manual. OpenCode logins are untouched (ADR-013).
 
-| Kind | Source | Normalization |
-| --- | --- | --- |
-| Custom | User-supplied HTTPS endpoint | `openchamber-quota-v1` windows, caps, and balances; no mapping UI. Setup is hidden until a live endpoint can be verified. |
-| Tavily | `GET https://api.tavily.com/usage` | Plan, key, and PAYG limits as monthly windows reset at 00:00 UTC on the first; PAYG without a limit becomes a balance; key usage without a limit is hidden |
-| OpenRouter | `GET https://openrouter.ai/api/v1/key` | Limited key becomes a window; unlimited key becomes a spend balance |
-| OpenCode Go | Console `/console/api/go/status`, falling back per window to [Go usage](https://opencode.ai/docs/console/go) (`/zen/go/v1/usage`) | Prefer precise Console used/limit meters. Use whole-percent Go usage for missing or incomplete Console meters, including a 5h meter with no reset before the window starts. |
-| OpenCode Zen | Console usage and budget endpoints | Request counts and spend budgets; an unaccepted key is an auth error. Setup hidden; unverified: the reference implementation uses a Console OAuth token and different billing routes |
-| Codex | `GET https://chatgpt.com/backend-api/wham/usage` | Imports the Codex CLI login; primary/secondary windows and credits; no OAuth flow. Setup hidden pending live verification |
+> Provisional — feature `002-opencode-credential-handoff`: server persistence and binding/coordinator checks remain unverified.
+> See `specs/002-opencode-credential-handoff/spec.md`.
+<!-- provisional:feature=002-opencode-credential-handoff -->
 
-## Trust and storage
+## Provider adapters and trust
 
-All provider requests are HTTPS-only, reject redirects, and use the runtime trust store. Custom CA bundles are not supported. Connections are written atomically to `connections.json` with `0600` on POSIX. On Windows the mode is ignored and the file inherits the OpenChamber data directory ACL; the service does not set an explicit DACL. The file is not encrypted in this release. The cache holds the last normalized snapshot and is ignored when it fails schema validation.
+Retain existing canonical window/cap/balance normalization; resetting windows use actual resets and estimates only for current valid data. Caps have no invented reset; balances have no bar. OpenRouter uses key usage, Go precise Console meters with Go fallback, Zen Console usage/budget, and Codex ChatGPT usage. Intended Codex path retires CLI auth-file import. Zen's resolved org identifier belongs in secret.accountId and its adapter must read that location. OAuth route/account correctness needs live verification.
 
-## Boundaries and gaps
-
-The plugin duplicates provider reads that OpenChamber renders from its own quota readers; the host does not expose those values to a guest. See [verification and coverage](TESTPLAN.md) and the [backlog](BACKLOG.md).
+All upstream requests are HTTPS-only, reject redirects and use system trust; no custom CA setting. Shared pure HTTP errors avoid bundling node:https into the plugin. Service-owned key files are atomic and 0600 on POSIX; Windows uses actual inherited ACLs requiring inspection. Usage cache/outputs contain no secrets. Current key storage is intentional and not confused with forbidden new OpenCode credential copies. See [interfaces](INTERFACES.md), [verification](TESTPLAN.md) and [backlog](BACKLOG.md).
