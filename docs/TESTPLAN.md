@@ -20,10 +20,10 @@ Rechecked on 2026-11-25 at `7d4757d`: typecheck, 107 Bun tests, 4 Playwright acc
 | REQ 1 / SC-009 | `tests/unit/caps-balances.test.ts`, `display.test.ts` | Pass |
 | REQ 1 / SC-010 | `tests/unit/normalize.test.ts`; host preferences check | Pass |
 | REQ 1 / SC-011 | `tests/unit/display.test.ts`, `preferences.test.ts`, `settings-view.test.ts` | Pass |
-| REQ 2 / SC-004 | `tests/contract/coverage.test.ts`, `tests/unit/providers.test.ts`; live checks | Adapters cover the full set. Live API-key checks passed for Tavily, OpenRouter, and OpenCode Go; Codex, Zen, and Custom setup is deferred by ADR-007/008 and their live checks are outstanding. |
+| REQ 2 / SC-004 | `tests/contract/coverage.test.ts`, `tests/unit/providers.test.ts`; live checks | Covers the initial adapter set only. Live API-key checks passed for Tavily, OpenRouter, and OpenCode Go; Codex, Zen, and Custom setup is deferred by ADR-007/008, and other OpenCode providers are unverified with no adapter yet. |
 | REQ 3 / FR-001 | Manifest check and isolated host mount/collapse | Pass |
 | REQ 4 / SC-003, SC-008 | `tests/unit/preferences.test.ts`, `tests/integration/us2.test.ts`, `empty.test.ts`; host preferences check | Pass |
-| REQ 5 / SC-005 | `tests/contract/connections.test.ts`, `tests/unit/credentials.test.ts`, `providers.test.ts` | Adapter, schema, and existing connections retained; setup hidden by ADR-007 |
+| REQ 2 (custom) / ADR-007 | `tests/contract/connections.test.ts`, `tests/unit/credentials.test.ts`, `providers.test.ts` | Adapter, schema, and existing custom connections retained; setup hidden by ADR-007 |
 
 The Go adapter regression test checks that a missing Console 5h reset is recovered from the Go usage API without rounding the valid Console weekly or monthly meters. Live verification on 2026-11-25 confirmed the fallback supplies the missing 5h window.
 
@@ -46,4 +46,6 @@ Live host checks on 2026-11-24 measured settings text **4.95:1 / 5.99:1**, statu
 
 ## Known gaps
 
-See [outstanding work](outstanding.md) for deferred providers and remaining verification.
+See the [backlog](BACKLOG.md) for deferred providers and remaining verification.
+
+- **ADR-009 (accepted, not implemented):** the quota-provider role needs contract checks that only declared provider credentials are accepted and used per read, that answers and snapshots stay secret-free, and that an expired OAuth credential is an auth error. It also needs a host check that the approval names the providers and re-prompts when the list changes. Until then the key-entry flow and its existing coverage stand.

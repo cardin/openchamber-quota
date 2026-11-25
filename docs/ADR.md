@@ -12,7 +12,7 @@
 
 ## ADR-002: Own provider I/O in a local guest service
 
-**Status:** Accepted (2026-11-23)
+**Status:** Accepted (2026-11-23); the credential-source clause is superseded in part by [ADR-009](#adr-009-reuse-opencode-held-credentials-through-the-quota-provider-role). The local service and secret-free snapshot stand.
 
 **Context:** The stock guest cannot read OpenChamber's quota data or credential store, and the host will not be changed. The extension still needs provider credentials, rate limiting, caching, and normalized data.
 
@@ -68,7 +68,7 @@
 
 **Context:** No live custom endpoint is available to validate the setup flow end to end. Offering an unverified connection path would invite failures that look like plugin bugs.
 
-**Decision:** Remove Custom from the add-provider list. Keep the adapter, schema, and existing connections so the path can be restored once a live endpoint is available. REQ 5 setup is deferred, not retired.
+**Decision:** Remove Custom from the add-provider list. Keep the adapter, schema, and existing connections so the path can be restored once a live endpoint is available. Custom-provider setup is deferred, not retired.
 
 **Alternatives rejected:** Leaving the option visible with a warning (still untestable); deleting the adapter (loses completed work and existing connections).
 
@@ -81,3 +81,15 @@
 **Decision:** Hide Codex and Zen from the add-provider list while no verified login exists. Keep their adapters and existing connections. Future work is to evaluate OAuth login support and Console token refresh, then re-enable setup only after live verification.
 
 **Alternatives rejected:** Shipping unverified key flows (users get avoidable failures); deleting the adapters (loses provider work and leaves REQ 2 coverage permanently reduced).
+
+## ADR-009: Reuse OpenCode-held credentials through the quota-provider role
+
+**Status:** Accepted (2026-11-25)
+
+**Context:** Users enter provider keys into Quota settings, so the service keeps a second copy of credentials OpenCode already holds. That blocks OAuth logins, forces re-entry, and duplicates secret storage. ADR-002 rejected reading either credential store directly.
+
+**Decision:** Reuse OpenCode-held credentials only through OpenChamber's approved usage-provider contract, which supplies credentials for the providers the extension declares after the user approves that exact list. Providers OpenCode holds no credential for keep keys entered in Quota settings. No component reads the OpenChamber or OpenCode credential store directly, and no credential reaches the panel. Handed credentials are per-read: never logged, persisted, or returned. An expired OAuth credential is reported as an auth error; refreshing it inside the service remains out of scope.
+
+**Alternatives rejected:** An OpenCode plugin that fetches and publishes quota (runs with the user's full OpenCode access, and guest access blocks the return path); direct store reads (ADR-002; unsupported internals); manual keys only (no OAuth, duplicate secrets).
+
+**Consequences:** Approval names the providers and is asked again when that list changes. Existing stored keys for migrated providers become redundant but remain until users remove them. The role also changes which surface owns display and refresh cadence; the implementation spec resolves that. Remote topologies must be verified: the extension service runs on the OpenChamber server, which brokers credentials over its OpenCode connection. Not implemented yet; the key-entry flow remains authoritative.

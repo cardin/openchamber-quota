@@ -19,6 +19,10 @@ The section reaches the service only through `host.serviceRequest`. The service 
 
 There is no custom TLS configuration route. Unknown routes return `404`.
 
+## Quota-provider role (ADR-009; accepted, not implemented)
+
+With `service.provides: ["quota"]` and `contributes.quota.providers`, OpenChamber posts `POST /quota` with `usage.read` and the credential OpenCode holds for each declared provider. The service answers in the SDK's `QuotaProviderResult` shape: `{ "ok": true, "data": ... }` or `{ "ok": false, "error": { ... } }`. Credentials are used only for that read and are never logged, persisted, or returned; an expired OAuth credential is an auth error. A declared provider OpenCode holds nothing for is answered as not configured by OpenChamber without calling the service. Tavily and custom providers continue to use `connections.json` keys.
+
 ## Snapshot
 
 The canonical schema is [quota-snapshot.schema.json](contracts/quota-snapshot.schema.json). A snapshot has `version: 1`, `generatedAt`, and ordered `providers`. Each provider has `connectionId`, `kind`, `label`, `state`, `refreshing`, and arrays of windows, caps, and balances; `error` is required when `state` is `error`.

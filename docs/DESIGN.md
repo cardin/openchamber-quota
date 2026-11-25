@@ -19,6 +19,8 @@ The manifest contributes `statusSection`, `page`, and a host-runtime `service`. 
 
 Display preferences use instance-scoped `host.storage`. Credentials and the snapshot cache stay in `OPENCHAMBER_SERVICE_DATA_DIR`. Snapshots contain no raw upstream bodies, endpoints, account IDs, or secrets. The separate connection metadata response includes a custom endpoint so the settings page can edit it, but no keys or account IDs.
 
+**Intended (ADR-009, accepted, not implemented):** OpenCode-held provider credentials arrive through OpenChamber's quota-provider role instead of a second stored copy, starting with OpenRouter, OpenCode Go, and OpenCode Zen; Tavily and custom providers keep keys in `OPENCHAMBER_SERVICE_DATA_DIR`. Handed credentials remain per-read and are never persisted or returned.
+
 ## Refresh and failure states
 
 One refresh per provider may run at a time. Minimum intervals are five minutes by default and ten minutes for Tavily; `Retry-After` and `retryAt` delay retries. The section keeps unexpired bars during a refresh, shows loading for a first fetch or an expired window, replaces a single malformed window with a window error, and replaces a failed provider with one provider-level error while other providers stay visible. No configured providers, everything hidden by selection, and a successful provider response with no quota data have distinct messages.
@@ -42,4 +44,4 @@ All provider requests are HTTPS-only, reject redirects, and use the runtime trus
 
 ## Boundaries and gaps
 
-The plugin duplicates provider reads that OpenChamber renders from its own quota readers; the host does not expose those values to a guest. See [verification and coverage](TESTPLAN.md) and [outstanding work](outstanding.md).
+The plugin duplicates provider reads that OpenChamber renders from its own quota readers; the host does not expose those values to a guest. See [verification and coverage](TESTPLAN.md) and the [backlog](BACKLOG.md).
