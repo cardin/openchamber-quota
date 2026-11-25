@@ -1,0 +1,51 @@
+{
+  "name": "openchamber-quota-display",
+  "version": "0.2.4",
+  "private": true,
+  "type": "module",
+  "openchamber": {
+    "apiVersion": 1,
+    "engines": {
+      "openchamber": ">=2.7.3"
+    },
+    "id": "quota-display",
+    "name": "Quota display",
+    "icon": "bar-chart-2",
+    "contributes": {
+      "statusSection": {
+        "entry": "src/section/index.html",
+        "title": "Quotas",
+        "height": 120
+      },
+      "page": {
+        "entry": "src/settings/index.html",
+        "title": "Quota settings",
+        "mobile": true
+      },
+      "service": {
+        "entry": "src/service/main.js",
+        "runtime": "host"
+      }
+    }
+  },
+  "scripts": {
+    "build": "bun run build:section && bun run build:settings && bun run build:service",
+    "build:section": "bun build src/section/main.ts --outfile src/section/main.js --target browser --format iife --minify",
+    "build:settings": "bun build src/settings/main.ts --outfile src/settings/main.js --target browser --format iife --minify",
+    "build:service": "bun build src/service/main.ts --outfile src/service/main.js --target node --format esm",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "bun test",
+    "test:a11y": "playwright test"
+  },
+  "dependencies": {
+    "@openchamber/sdk": "2.7.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1",
+    "@types/bun": "^1.3.0",
+    "@types/node": "^22.10.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "typescript": "^5.7.0"
+  }
+}

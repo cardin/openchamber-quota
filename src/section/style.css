@@ -1,0 +1,147 @@
+  :root {
+    color-scheme: light dark;
+    font-family: var(--oc-font, system-ui, sans-serif);
+  }
+  html, body, #root { width: 100%; box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 2px 0 10px 21px;
+    background: var(--oc-bg, Canvas);
+    color: var(--oc-fg, CanvasText);
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  #root { position: relative; }
+  [hidden] { display: none !important; }
+  h2, h3 { margin: 0; }
+  h2 { font-size: 14px; }
+  h3 { font-size: 13px; font-weight: 400; margin: 7px 0 2px; color: var(--oc-fg, inherit); }
+  .quota-provider h3 { display: flex; align-items: center; position: relative; }
+  .quota-provider-icon { position: absolute; left: -19px; top: 50%; transform: translateY(-50%); display: inline-flex; width: 9px; height: 9px; flex: none; color: var(--oc-fg, inherit); }
+  .quota-provider-icon svg { display: block; width: 100%; height: 100%; }
+  .quota-provider-icon svg:not(.quota-tavily-mark) { opacity: .75; }
+  :root[data-oc-theme="dark"] .quota-tavily-mark { fill: #FFFCF6; }
+  button {
+    border: 1px solid var(--oc-border, color-mix(in srgb, CanvasText 22%, transparent));
+    border-radius: var(--oc-radius, 6px);
+    background: var(--oc-elevated, transparent);
+    color: inherit;
+    font: inherit;
+    padding: 3px 8px;
+    cursor: pointer;
+  }
+  button:hover { background: var(--oc-hover, color-mix(in srgb, CanvasText 8%, transparent)); }
+  .quota-header { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-bottom: 2px; }
+  .quota-icon-button {
+    position: absolute;
+    top: 0;
+    right: 0;
+    display: inline-flex;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    background: transparent;
+    color: var(--oc-muted, inherit);
+  }
+  .quota-icon-button:hover { background: var(--oc-hover, transparent); color: var(--oc-fg, inherit); }
+  .quota-provider { padding-top: 3px; }
+  .quota-provider + .quota-provider { margin-top: 8px; }
+  .body-refresh .quota-provider { padding-right: 24px; }
+  .quota-provider:first-of-type { padding-top: 0; margin-top: 0; }
+  .quota-provider:first-of-type h3 { margin-top: 2px; }
+  .quota-row { padding: 2px 0 3px; }
+  .quota-row-line { display: grid; grid-template-columns: max-content minmax(40px, 1fr) auto auto; align-items: center; gap: 6px; padding: 2px 0; width: 100%; }
+  .quota-window-rows { display: grid; grid-template-columns: 52px minmax(0, 1fr) max-content max-content; align-items: center; gap: 2px 6px; width: 100%; }
+  .quota-window-rows .quota-row-window { display: contents; }
+  .quota-window-rows .quota-status-text {
+    grid-column: 2 / -1;
+    font-size: 11px;
+    color: var(--oc-muted, inherit);
+    white-space: nowrap;
+  }
+  .quota-window-rows .quota-window-error .quota-status-text {
+    color: var(--oc-error-text, #d33);
+    white-space: normal;
+  }
+  .quota-row-cap { grid-template-columns: 52px minmax(0, 1fr) auto; }
+  .quota-row-line .quota-label { font-size: 11px; white-space: nowrap; }
+  .quota-row-line .quota-bar { margin: 0; height: 3px; min-width: 40px; }
+  .quota-row-line .quota-value { font-size: 11px; color: var(--oc-muted, inherit); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .quota-row-line .quota-reset { font-size: 11px; color: var(--oc-muted, inherit); white-space: nowrap; text-align: right; justify-self: end; font-variant-numeric: tabular-nums; }
+  .quota-row-balance { grid-template-columns: 1fr auto; }
+  .quota-row-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .quota-label { font-weight: 400; }
+  .quota-value { font-variant-numeric: tabular-nums; color: var(--oc-muted, inherit); }
+  .quota-bar {
+    position: relative;
+    height: 9px;
+    margin: 4px 0 2px;
+    border-radius: 999px;
+    background: var(--oc-border, color-mix(in srgb, CanvasText 18%, transparent));
+    overflow: hidden;
+  }
+  .quota-fill {
+    display: block;
+    height: 100%;
+    background: var(--oc-primary, #4f8cff);
+    transition: width .2s ease;
+  }
+  .state-warning .quota-fill {
+    background-color: var(--oc-warning, #d99a00);
+  }
+  .state-danger .quota-fill {
+    background-color: var(--oc-error, #d33);
+  }
+  .quota-benchmark {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--oc-bg, #fff);
+    box-shadow: 0 0 0 1px var(--oc-fg, #000);
+    transform: translateX(-1px);
+    opacity: 1;
+  }
+  .quota-meta { font-size: 12px; color: var(--oc-muted, inherit); font-variant-numeric: tabular-nums; }
+  .quota-row-balance { display: flex; justify-content: space-between; align-items: baseline; }
+  .quota-row-error, .quota-error {
+    color: var(--oc-error-text, #d33);
+    font-size: 12px;
+    padding: 4px 0;
+  }
+  .quota-row-loading { color: var(--oc-muted, inherit); font-size: 12px; padding: 4px 0; }
+  .quota-empty { padding: 2px 0; color: var(--oc-muted, inherit); }
+  .body-refresh .quota-empty { padding-right: 24px; }
+  .quota-empty p { margin: 2px 0 0; }
+  .quota-settings-section { margin-top: 10px; }
+  .quota-settings-section:first-child { margin-top: 0; }
+  .quota-form { display: grid; gap: 4px; margin: 8px 0; max-width: 560px; font-size: 12px; }
+  .quota-form-error { color: var(--oc-error-text, #d33); font-size: 12px; }
+  .quota-form-error:empty { display: none; }
+  .quota-form-hint { margin: 0; color: var(--oc-muted, inherit); font-size: 11px; }
+  .quota-muted { color: var(--oc-muted, inherit); }
+  details { margin-top: 8px; border-top: 1px solid var(--oc-border, color-mix(in srgb, CanvasText 15%, transparent)); padding-top: 6px; }
+  summary { cursor: pointer; font-weight: 500; }
+  .quota-select-provider { margin: 6px 0; }
+  .quota-check { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+  .quota-select-windows { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-left: 18px; margin-top: 3px; }
+  .quota-check-window { font-size: 12px; color: var(--oc-muted, inherit); }
+  .quota-preferences { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; }
+  .quota-preferences input { width: 56px; }
+  .quota-connections { list-style: none; padding: 0; margin: 6px 0; }
+  .quota-connection { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 3px 0; font-size: 12px; }
+  .quota-connection-actions { display: flex; gap: 4px; }
+  .quota-form label { display: grid; gap: 2px; }
+  .quota-form input, .quota-form select {
+    font: inherit;
+    color: inherit;
+    background: var(--oc-elevated, transparent);
+    border: 1px solid var(--oc-border, color-mix(in srgb, CanvasText 22%, transparent));
+    border-radius: var(--oc-radius, 6px);
+    padding: 3px 5px;
+  }
+  .quota-form button { justify-self: start; margin-top: 2px; }
+  .quota-form-actions { display: flex; align-items: center; gap: 6px; justify-self: start; }

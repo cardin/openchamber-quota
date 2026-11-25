@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openchamber-quota.local/contracts/custom-provider-v1.schema.json",
+  "title": "openchamber-quota-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version"],
+  "properties": {
+    "version": { "const": 1 },
+    "windows": {
+      "type": "array",
+      "maxItems": 20,
+      "items": { "$ref": "#/$defs/window" }
+    },
+    "caps": {
+      "type": "array",
+      "maxItems": 20,
+      "items": { "$ref": "#/$defs/cap" }
+    },
+    "balances": {
+      "type": "array",
+      "maxItems": 20,
+      "items": { "$ref": "#/$defs/balance" }
+    }
+  },
+  "anyOf": [
+    { "properties": { "windows": { "minItems": 1 } }, "required": ["windows"] },
+    { "properties": { "caps": { "minItems": 1 } }, "required": ["caps"] },
+    { "properties": { "balances": { "minItems": 1 } }, "required": ["balances"] }
+  ],
+  "$defs": {
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "remainingPercent", "resetAt"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "remainingPercent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "resetAt": { "type": "string", "format": "date-time" },
+        "durationSeconds": { "type": "number", "exclusiveMinimum": 0 },
+        "used": { "$ref": "#/$defs/amount" },
+        "limit": { "$ref": "#/$defs/amount" }
+      }
+    },
+    "cap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "used", "limit", "unit"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "used": { "type": "number", "minimum": 0 },
+        "limit": { "type": "number", "exclusiveMinimum": 0 },
+        "unit": { "type": "string", "minLength": 1, "maxLength": 16 }
+      }
+    },
+    "balance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "value", "unit"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "value": { "type": "number" },
+        "unit": { "type": "string", "minLength": 1, "maxLength": 16 }
+      }
+    },
+    "amount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "unit"],
+      "properties": {
+        "value": { "type": "number" },
+        "unit": { "type": "string", "minLength": 1, "maxLength": 16 }
+      }
+    }
+  }
+}

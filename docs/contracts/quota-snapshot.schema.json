@@ -1,0 +1,289 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openchamber-quota.local/contracts/quota-snapshot.schema.json",
+  "title": "QuotaSnapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "generatedAt",
+    "providers"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "providers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/provider"
+      }
+    }
+  },
+  "$defs": {
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "connectionId",
+        "kind",
+        "label",
+        "state",
+        "windows",
+        "caps",
+        "balances",
+        "refreshing"
+      ],
+      "properties": {
+        "connectionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "kind": {
+          "enum": [
+            "custom",
+            "codex",
+            "opencode-go",
+            "openrouter",
+            "tavily",
+            "opencode-zen"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "state": {
+          "enum": [
+            "ok",
+            "error",
+            "unconfigured",
+            "loading"
+          ]
+        },
+        "windows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/window"
+          }
+        },
+        "caps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/cap"
+          }
+        },
+        "balances": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/balance"
+          }
+        },
+        "fetchedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "refreshing": {
+          "type": "boolean"
+        },
+        "error": {
+          "$ref": "#/$defs/error"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "error"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "required": [
+              "error"
+            ]
+          }
+        }
+      ]
+    },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "remainingPercent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "resetAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "durationSeconds": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "used": {
+          "$ref": "#/$defs/amount"
+        },
+        "limit": {
+          "$ref": "#/$defs/amount"
+        },
+        "error": {
+          "$ref": "#/$defs/error"
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "remainingPercent",
+            "resetAt"
+          ]
+        },
+        {
+          "required": [
+            "error"
+          ]
+        }
+      ]
+    },
+    "cap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "used",
+        "limit",
+        "unit"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "used": {
+          "type": "number",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16
+        }
+      }
+    },
+    "balance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "value",
+        "unit"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "value": {
+          "type": "number"
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16
+        }
+      }
+    },
+    "amount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "unit"
+      ],
+      "properties": {
+        "value": {
+          "type": "number"
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "not_configured",
+            "auth",
+            "rate_limited",
+            "timeout",
+            "network",
+            "bad_response",
+            "provider_error"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "retryAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}
