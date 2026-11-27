@@ -3,6 +3,7 @@ import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { CredentialStore } from "../../src/service/credentials.ts";
+import { SettingsService } from "../../src/service/settings.ts";
 import type { SnapshotService } from "../../src/service/snapshot.ts";
 import { handleRequest } from "../../src/service/routes.ts";
 import type { RouteDeps } from "../../src/service/routes.ts";
@@ -12,6 +13,8 @@ const setup = async (): Promise<RouteDeps> => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "quota-conn-"));
   const store = new CredentialStore(dir);
   await store.load();
+  const settings = new SettingsService(dir);
+  await settings.load();
   return {
     store,
     snapshot: {
@@ -20,6 +23,7 @@ const setup = async (): Promise<RouteDeps> => {
       isRefreshing: () => false,
       testConnection: async () => ({ ok: true }),
     } as unknown as SnapshotService,
+    settings,
     token: "token",
     dataDir: dir,
   };
@@ -34,20 +38,34 @@ const post = (deps: RouteDeps, body: unknown, method = "POST", path = "/connecti
   });
 
 describe("connection contracts", () => {
-  test("requires a key for named providers and never returns it", async () => {
+  test("requires a key for custom providers and never returns it", async () => {
     const deps = await setup();
-    const missing = await post(deps, { kind: "tavily", label: "Tavily" });
+    const missing = await post(deps, {
+      kind: "custom",
+      label: "Gateway",
+      endpoint: "https://example.com/quota",
+    });
     expect(missing.status).toBe(400);
 
-    const created = await post(deps, { kind: "tavily", label: "Tavily", apiKey: "tvly-1" });
+    const created = await post(deps, {
+      kind: "custom",
+      label: "Gateway",
+      endpoint: "https://example.com/quota",
+      apiKey: "custom-secret",
+    });
     expect(created.status).toBe(201);
-    expect(JSON.stringify(created.body)).not.toContain("tvly-1");
+    expect(JSON.stringify(created.body)).not.toContain("custom-secret");
   });
 
-  test("accepts Codex without a key and rejects non-HTTPS custom endpoints", async () => {
+  test("rejects stored keys for OpenCode-owned providers and non-HTTPS custom endpoints", async () => {
     const deps = await setup();
-    const codex = await post(deps, { kind: "codex", label: "Codex" });
-    expect(codex.status).toBe(201);
+    for (const kind of ["codex", "openrouter", "opencode-go", "opencode-zen", "tavily", "exa"]) {
+      const rejected = await post(deps, { kind, label: kind, apiKey: "key" });
+      expect(rejected.status).toBe(400);
+      expect((rejected.body as { error: { message: string } }).error.message).toContain(
+        "signs in through OpenCode",
+      );
+    }
 
     const bad = await post(deps, {
       kind: "custom",
@@ -61,9 +79,10 @@ describe("connection contracts", () => {
   test("rejects unknown connection fields", async () => {
     const deps = await setup();
     const result = await post(deps, {
-      kind: "tavily",
-      label: "Tavily",
-      apiKey: "tvly-1",
+      kind: "custom",
+      label: "Gateway",
+      endpoint: "https://example.com/quota",
+      apiKey: "custom-secret",
       unexpected: true,
     });
     expect(result.status).toBe(400);
@@ -116,10 +135,16 @@ describe("connection contracts", () => {
     expect(JSON.stringify(updated.body)).not.toContain("secret-key");
   });
 
-  test("tests a connection through the snapshot service", async () => {
+  test("tests a custom connection through the snapshot service", async () => {
     const deps = await setup();
-    await post(deps, { kind: "tavily", label: "Tavily", apiKey: "tvly-1" });
-    const testResult = await post(deps, {}, "POST", "/connections/tavily/test");
+    const created = await post(deps, {
+      kind: "custom",
+      label: "Gateway",
+      endpoint: "https://example.com/quota",
+      apiKey: "custom-secret",
+    });
+    const id = (created.body as { connection: { id: string } }).connection.id;
+    const testResult = await post(deps, {}, "POST", `/connections/${id}/test`);
     expect(testResult.status).toBe(200);
     expect((testResult.body as { ok: boolean }).ok).toBe(true);
   });

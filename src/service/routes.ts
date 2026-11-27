@@ -1,7 +1,9 @@
 import type { ProviderKind } from "../core/types.ts";
 import { PROVIDER_KINDS } from "../core/types.ts";
+import { isManagedKind } from "../core/bridge.ts";
 import type { CredentialStore } from "./credentials.ts";
 import type { SnapshotService } from "./snapshot.ts";
+import type { SettingsService } from "./settings.ts";
 import { validateSnapshot } from "./snapshot-schema.ts";
 
 export type RouteRequest = {
@@ -19,7 +21,11 @@ export type RouteResponse = {
 export type RouteDeps = {
   store: CredentialStore;
   snapshot: SnapshotService;
+  settings: SettingsService;
+  /** Existing UI-service bearer, injected by the host. */
   token: string;
+  /** Separate bridge-only bearer from the protected descriptor. */
+  bridgeToken?: string;
   dataDir: string;
 };
 
@@ -75,6 +81,15 @@ const connectionInput = (
   const unknown = Object.keys(body).find((key) => !CONNECTION_FIELDS.has(key));
   if (unknown) return { error: error(400, "bad_request", `Unknown field: ${unknown}.`) };
   if (!isKind(body.kind)) return { error: error(400, "bad_request", "Unknown provider kind.") };
+  if (isManagedKind(body.kind)) {
+    return {
+      error: error(
+        400,
+        "bad_request",
+        "This provider signs in through OpenCode and cannot store a key here.",
+      ),
+    };
+  }
   const label = validLabel(body.label);
   if (!label) return { error: error(400, "bad_request", "Label must be 1–60 characters.") };
 
@@ -82,7 +97,7 @@ const connectionInput = (
   if (body.apiKey !== undefined && !apiKey) {
     return { error: error(400, "bad_request", "Key must be 1–4096 characters.") };
   }
-  if (!existing && body.kind !== "codex" && body.kind !== "custom" && !apiKey) {
+  if (!existing && !apiKey) {
     return { error: error(400, "bad_request", "A key is required.") };
   }
 
@@ -107,18 +122,33 @@ const connectionInput = (
   };
 };
 
+const REFRESH_FILTERS = new Set([
+  "connectionId",
+  "provider",
+  "providerId",
+  "providers",
+  "kind",
+  "connection",
+  "requestedProviders",
+]);
+
 export const handleRequest = async (
   deps: RouteDeps,
   request: RouteRequest,
 ): Promise<RouteResponse> => {
+  const url = new URL(request.path, "http://127.0.0.1");
+  const method = request.method.toUpperCase();
   const authorization = request.headers.authorization;
-  if (authorization !== `Bearer ${deps.token}`) {
+  const bridgeRoute = url.pathname.startsWith("/bridge/");
+  if (bridgeRoute) {
+    if (!deps.bridgeToken || authorization !== `Bearer ${deps.bridgeToken}`) {
+      return error(401, "unauthorized", "Missing or wrong bridge token.");
+    }
+  } else if (authorization !== `Bearer ${deps.token}`) {
     return error(401, "unauthorized", "Missing or wrong service token.");
   }
 
-  const url = new URL(request.path, "http://127.0.0.1");
   const parts = url.pathname.split("/").filter(Boolean);
-  const method = request.method.toUpperCase();
 
   if (method === "GET" && url.pathname === "/health") {
     return json(200, { ok: true, version: 1 });
@@ -134,15 +164,38 @@ export const handleRequest = async (
   if (method === "POST" && url.pathname === "/refresh") {
     const body = readBody(request.body);
     if (body === null) return error(400, "bad_request", "Body must be JSON.");
-    const connectionId = typeof body.connectionId === "string" ? body.connectionId : undefined;
-    if (connectionId && !deps.store.get(connectionId)) {
-      return error(404, "not_found", "Unknown connection.");
+    const filter = Object.keys(body).find((key) => REFRESH_FILTERS.has(key));
+    if (filter || [...url.searchParams.keys()].some((key) => REFRESH_FILTERS.has(key))) {
+      return error(400, "bad_request", "Refresh always covers all providers.");
     }
-    if (connectionId && deps.snapshot.isRefreshing(connectionId)) {
-      return error(409, "conflict", "A refresh is already running.");
+    if (Object.keys(body).length > 0 || url.search) {
+      return error(400, "bad_request", "Refresh accepts no options.");
     }
-    deps.snapshot.startRefresh(connectionId);
-    return json(202, { accepted: true });
+    const accepted = await deps.snapshot.refreshAll();
+    return json(202, { accepted: true, ...accepted });
+  }
+  if (method === "GET" && url.pathname === "/settings") {
+    return json(200, deps.settings.get());
+  }
+  if (method === "PATCH" && url.pathname === "/settings") {
+    const body = readBody(request.body);
+    if (body === null) return error(400, "bad_request", "Body must be JSON.");
+    const result = await deps.settings.patch(body);
+    if (result.status === 400) return error(400, "bad_request", result.message);
+    if (result.status === 409) {
+      return json(409, { error: { code: "conflict", message: "Settings changed." }, ...result.envelope });
+    }
+    return json(200, result.envelope);
+  }
+  if (method === "GET" && url.pathname === "/bridge/state") {
+    return json(200, await deps.snapshot.bridgeState());
+  }
+  if (method === "POST" && url.pathname === "/bridge/snapshot") {
+    const body = readBody(request.body);
+    if (body === null) return error(400, "bad_request", "Body must be JSON.");
+    const result = await deps.snapshot.acceptBridgeInput(body);
+    if (!result.ok) return error(result.status, result.status === 409 ? "conflict" : "bad_request", result.message);
+    return json(200, { accepted: true, requestId: result.requestId });
   }
   if (method === "GET" && url.pathname === "/connections") {
     return json(200, { connections: deps.store.list() });

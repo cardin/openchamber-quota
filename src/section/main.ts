@@ -1,13 +1,17 @@
 import { connectHost } from "@openchamber/sdk";
 import { applyHostReady } from "@openchamber/sdk/ui";
-import type { DisplaySelection, Snapshot } from "../core/types.ts";
+import type { DisplaySelection, SettingsEnvelope, Snapshot } from "../core/types.ts";
 import { visibleBalances } from "../core/normalize.ts";
 import { DEFAULT_SELECTION } from "../core/types.ts";
+import { isBridgeConnectionId } from "../core/bridge.ts";
 import {
   isBalanceVisible,
+  isBridgeUnavailablePlaceholder,
+  isProviderAuthError,
+  isProviderDisplayable,
   isProviderVisible,
   isWindowVisible,
-  loadSelection,
+  orderedConnectionIds,
 } from "./preferences.ts";
 import { serviceCall } from "./host.ts";
 import { SnapshotController } from "./refresh.ts";
@@ -22,6 +26,9 @@ if (!root) throw new Error("Missing #root");
 
 let snapshot: Snapshot | null = null;
 let selection: DisplaySelection = { ...DEFAULT_SELECTION };
+let revision = 0;
+let settingsReady = false;
+let approvalRequired = false;
 let started = false;
 let disposed = false;
 let error = "";
@@ -29,6 +36,61 @@ let controller: SnapshotController | null = null;
 let resetTimer: ReturnType<typeof setTimeout> | null = null;
 let headerControl = false;
 let lastHeight = 0;
+const pendingCollapse = new Map<string, boolean>();
+let savingCollapse = false;
+
+const isCollapsed = (id: string): boolean =>
+  pendingCollapse.get(id) ?? selection.collapsedProviders?.includes(id) ?? false;
+
+const applySettings = (body: unknown): boolean => {
+  const envelope = body as Partial<SettingsEnvelope> | null;
+  if (envelope?.version !== 1 || !envelope.selection || typeof envelope.revision !== "number") {
+    return false;
+  }
+  // A poll started before a save can finish after it.
+  if (envelope.revision >= revision) {
+    selection = envelope.selection;
+    revision = envelope.revision;
+  }
+  return true;
+};
+
+const saveCollapse = async (): Promise<void> => {
+  if (savingCollapse) return;
+  savingCollapse = true;
+  try {
+    while (pendingCollapse.size > 0) {
+      const changes = Object.fromEntries(pendingCollapse);
+      let saved = false;
+      try {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const response = await call({
+            method: "PATCH",
+            path: "/settings",
+            body: { expectedRevision: revision, changes: { collapsedProviders: changes } },
+          });
+          if ((response.status !== 200 && response.status !== 409) || !applySettings(response.body)) break;
+          if (response.status === 200) {
+            saved = true;
+            break;
+          }
+        }
+      } catch {
+        // Restore the last saved state below if the service cannot be reached.
+      }
+      for (const [id, value] of Object.entries(changes)) {
+        // Leave a newer click queued if the user changed their mind during the write.
+        if (pendingCollapse.get(id) === value) pendingCollapse.delete(id);
+      }
+      render();
+      if (!saved && !disposed) {
+        void host.toast({ kind: "error", message: "Could not save which providers are collapsed." }).catch(() => undefined);
+      }
+    }
+  } finally {
+    savingCollapse = false;
+  }
+};
 
 const refreshIcon = `<svg class="lucide lucide-rotate-cw" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
   <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -70,8 +132,25 @@ const scheduleHeightReport = (): void => {
 const render = (): void => {
   if (disposed) return;
   const now = Date.now();
-  const visible = (snapshot?.providers ?? []).flatMap((provider) => {
+  const providers = snapshot?.providers ?? [];
+  const bridgeProviders = providers.filter((provider) => isBridgeConnectionId(provider.connectionId));
+  const hasConfigured = providers.some(isProviderDisplayable);
+  const hasAuthError = bridgeProviders.some(isProviderAuthError);
+  const hasBridgeProblem = bridgeProviders.some(isBridgeUnavailablePlaceholder);
+  const bridgeNotice = bridgeProviders.length > 0 && !bridgeProviders.some(isProviderDisplayable)
+    ? renderEmpty(true, false, false, hasAuthError, hasBridgeProblem)
+    : hasBridgeProblem
+      ? renderEmpty(true, false, false, false, true)
+      : "";
+  const ordered = orderedConnectionIds(
+    (snapshot?.providers ?? []).map((provider) => provider.connectionId),
+    selection.providerOrder,
+  )
+    .map((id) => snapshot?.providers.find((provider) => provider.connectionId === id))
+    .filter((provider): provider is NonNullable<typeof provider> => provider !== undefined);
+  const visible = ordered.flatMap((provider) => {
     if (!isProviderVisible(selection, provider.connectionId)) return [];
+    if (!isProviderDisplayable(provider)) return [];
     const windows = provider.windows.filter((window) =>
       isWindowVisible(selection, provider.connectionId, window.id),
     );
@@ -88,15 +167,27 @@ const render = (): void => {
     return [{ ...provider, windows, balances }];
   });
 
-  const body = !snapshot
+  const body = approvalRequired
+    ? `<div class="quota-empty" role="status"><strong>Approval required.</strong>
+        <p>Approve Quota display in OpenChamber’s Extensions settings.</p></div>`
+    : !snapshot || !settingsReady
     ? `<div class="quota-row quota-row-loading" role="status">Loading quota…</div>`
-    : visible.length
-      ? visible.map((provider) => renderProvider(provider, selection, now)).join("")
-      : renderEmpty((snapshot.providers.length ?? 0) > 0, visible.length > 0);
+    : `${bridgeNotice}${visible.length
+      ? visible.map((provider) =>
+            renderProvider(
+              provider,
+              selection,
+              now,
+              isCollapsed(provider.connectionId),
+              selection.collapsedQuota[provider.connectionId] ?? "least-remaining",
+            ),
+          )
+          .join("")
+      : bridgeNotice ? "" : renderEmpty(providers.length > 0, false, hasConfigured)}`;
 
-  const showUsed = selection.quotaDisplay === "used" &&
+  const showUsed = !approvalRequired && settingsReady && selection.quotaDisplay === "used" &&
     visible.some((provider) => provider.state === "ok" && (provider.windows.length > 0 || provider.caps.length > 0));
-  root.innerHTML = `${headerControl ? "" : `<button type="button" class="quota-icon-button" data-action="refresh" aria-label="Refresh quota" title="Refresh">${refreshIcon}</button>`}
+  root.innerHTML = `${headerControl || approvalRequired ? "" : `<button type="button" class="quota-icon-button" data-action="refresh" aria-label="Refresh quota" title="Refresh">${refreshIcon}</button>`}
   ${error ? `<div class="quota-error" role="alert">${escapeHtml(error)}</div>` : ""}
   ${showUsed ? '<div class="quota-meta">Quota used</div>' : ""}
   ${body}`;
@@ -110,12 +201,21 @@ if (typeof ResizeObserver === "function") {
 }
 
 host.onStatusControl((event) => {
-  if (event.id === "refresh") void controller?.refresh().then(render);
+  if (event.id === "refresh" && !approvalRequired) void controller?.refresh().then(render);
 });
 
 root.addEventListener("click", (event) => {
   const target = (event.target as HTMLElement).closest<HTMLElement>("[data-action]");
-  if (target?.dataset.action !== "refresh") return;
+  if (!target) return;
+  if (target.dataset.action === "toggle-provider") {
+    const providerId = target.dataset.provider;
+    if (!providerId) return;
+    pendingCollapse.set(providerId, !isCollapsed(providerId));
+    render();
+    void saveCollapse();
+    return;
+  }
+  if (target.dataset.action !== "refresh") return;
   void (async () => {
     if (!controller) return;
     await controller.refresh();
@@ -145,17 +245,27 @@ host.onReady((context) => {
           headerControl = false;
         }
       }
-      selection = await loadSelection(host.storage);
       if (disposed) return;
-      controller = new SnapshotController(call, (next) => {
-        snapshot = next;
-        scheduleReset(next);
-        void loadSelection(host.storage).then((latest) => {
-          selection = latest;
+      controller = new SnapshotController(
+        call,
+        (next) => {
+          snapshot = next;
+          scheduleReset(next);
           render();
-        });
-      });
-      controller.start();
+        },
+        (envelope: SettingsEnvelope) => {
+          applySettings(envelope);
+          render();
+        },
+        undefined,
+        (required) => {
+          if (required === approvalRequired) return;
+          approvalRequired = required;
+          if (required) render();
+        },
+      );
+      await controller.start();
+      settingsReady = true;
       render();
     } catch (cause) {
       error = cause instanceof Error ? cause.message : "The quota service is unavailable.";

@@ -5,13 +5,15 @@ import type {
   QuotaWindow,
   StoredConnection,
 } from "../core/types.ts";
-import type { HttpOptions, HttpResult } from "../service/http.ts";
+import type { HttpOptions, HttpResult } from "../core/http-error.ts";
 
 export type AdapterContext = {
   now: () => number;
   requestJson: (url: string, options: HttpOptions) => Promise<HttpResult>;
   dataDir: string;
-  codexHome?: string;
+  /** Shared cycle budget: sequential fallback calls must not restart it. */
+  deadlineAt?: number;
+  signal?: AbortSignal;
 };
 
 export type AdapterResult = {

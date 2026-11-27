@@ -1,6 +1,7 @@
 import type { Adapter } from "./types.ts";
+import { PROVIDER_MIN_INTERVAL_MS } from "../core/bridge.ts";
 import { asNumber, asRecord } from "./parse.ts";
-import { HttpError } from "../service/http.ts";
+import { HttpError } from "../core/http-error.ts";
 import type { Balance, QuotaWindow } from "../core/types.ts";
 
 const monthPeriod = (now: number): { resetAt: string; seconds: number } => {
@@ -35,13 +36,15 @@ const monthlyWindow = (
 
 export const tavilyAdapter: Adapter = {
   kind: "tavily",
-  minIntervalMs: 10 * 60_000,
+  minIntervalMs: PROVIDER_MIN_INTERVAL_MS,
   fetch: async (connection, context) => {
     const apiKey = connection.secret.apiKey;
     if (!apiKey) throw new HttpError("not_configured", "Tavily has no API key.");
     const response = await context.requestJson("https://api.tavily.com/usage", {
       headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
       timeoutMs: 10_000,
+      deadlineAt: context.deadlineAt,
+      signal: context.signal,
     });
     const body = asRecord(response.body) ?? {};
     const key = asRecord(body.key) ?? {};

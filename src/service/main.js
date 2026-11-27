@@ -7739,890 +7739,101 @@ var require_dist = __commonJS(function(exports, module) {
 // src/service/main.ts
 import http from "node:http";
 import os2 from "node:os";
-import path4 from "node:path";
+import path5 from "node:path";
 
-// src/service/credentials.ts
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import path from "node:path";
-var EMPTY = { version: 1, connections: [] };
-var isRecord = (value) => !!value && typeof value === "object" && !Array.isArray(value);
-var normalizeFile = (value) => {
-  if (!isRecord(value) || !Array.isArray(value.connections))
-    return { ...EMPTY };
-  const connections = value.connections.filter((entry) => {
-    if (!isRecord(entry))
-      return false;
-    return typeof entry.id === "string" && typeof entry.kind === "string" && typeof entry.label === "string" && typeof entry.createdAt === "string" && isRecord(entry.secret);
-  });
-  return { version: 1, connections };
-};
-var toPublic = (entry) => {
-  const { secret: _secret, accountId: _accountId, ...connection } = entry;
-  return connection;
-};
-var slug = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "provider";
-var isNamedKind = (kind) => kind !== "custom";
-
-class CredentialStore {
-  dataDir;
-  file;
-  data = { ...EMPTY };
-  constructor(dataDir) {
-    this.dataDir = dataDir;
-    this.file = path.join(dataDir, "connections.json");
-  }
-  async load() {
-    try {
-      this.data = normalizeFile(JSON.parse(await readFile(this.file, "utf8")));
-    } catch {
-      this.data = { ...EMPTY };
-    }
-  }
-  async save() {
-    await mkdir(this.dataDir, { recursive: true });
-    const temp = `${this.file}.${process.pid}.${randomUUID()}.tmp`;
-    await writeFile(temp, JSON.stringify(this.data, null, 2), { mode: 384 });
-    await rename(temp, this.file);
-  }
-  list() {
-    return this.data.connections.map(toPublic);
-  }
-  entries() {
-    return [...this.data.connections];
-  }
-  get(id) {
-    return this.data.connections.find((entry) => entry.id === id);
-  }
-  async upsert(input) {
-    const existing = input.id ? this.get(input.id) : undefined;
-    if (isNamedKind(input.kind)) {
-      const clash = this.data.connections.find((entry) => entry.kind === input.kind && entry.id !== existing?.id);
-      if (clash)
-        throw new Error(`A ${input.kind} connection already exists.`);
-    } else {
-      const clash = this.data.connections.find((entry) => entry.kind === "custom" && entry.id !== existing?.id && entry.label.toLowerCase() === input.label.toLowerCase());
-      if (clash)
-        throw new Error("A custom provider with this label already exists.");
-    }
-    const now = new Date().toISOString();
-    const id = existing?.id ?? (isNamedKind(input.kind) ? input.kind : `custom-${slug(input.label)}${this.data.connections.some((entry) => entry.id === `custom-${slug(input.label)}`) ? `-${Date.now().toString(36)}` : ""}`);
-    const secret = {
-      ...existing?.secret.apiKey && !input.apiKey ? { apiKey: existing.secret.apiKey } : {},
-      ...input.apiKey ? { apiKey: input.apiKey } : {},
-      ...existing?.secret.accessToken && !input.accessToken ? { accessToken: existing.secret.accessToken } : {},
-      ...input.accessToken ? { accessToken: input.accessToken } : {},
-      ...input.accountId ? { accountId: input.accountId } : {}
-    };
-    if (input.kind === "codex" && !secret.accessToken && existing?.secret.accessToken) {
-      secret.accessToken = existing.secret.accessToken;
-    }
-    if (input.kind === "codex" && !secret.accountId && existing?.secret.accountId) {
-      secret.accountId = existing.secret.accountId;
-    }
-    const connection = {
-      id,
-      kind: input.kind,
-      label: input.label,
-      ...input.endpoint ? { endpoint: input.endpoint } : existing?.endpoint ? { endpoint: existing.endpoint } : {},
-      ...secret.accountId ? { accountId: secret.accountId } : {},
-      createdAt: existing?.createdAt ?? now,
-      secret
-    };
-    this.data.connections = existing ? this.data.connections.map((entry) => entry.id === id ? connection : entry) : [...this.data.connections, connection];
-    await this.save();
-    return toPublic(connection);
-  }
-  async remove(id) {
-    const before = this.data.connections.length;
-    this.data.connections = this.data.connections.filter((entry) => entry.id !== id);
-    if (this.data.connections.length === before)
-      return false;
-    await this.save();
-    return true;
-  }
-  async setTestResult(id, result) {
-    const entry = this.get(id);
-    if (!entry)
-      return;
-    entry.lastTestAt = new Date().toISOString();
-    entry.lastTestResult = result;
-    await this.save();
-  }
-}
-
-// src/service/scheduler.ts
-class Scheduler {
-  states = new Map;
-  exportState() {
-    const result = {};
-    for (const [id, state] of this.states) {
-      result[id] = { lastAttempt: state.lastAttempt, retryAt: state.retryAt };
-    }
-    return result;
-  }
-  importState(state) {
-    if (!state || typeof state !== "object")
-      return;
-    for (const [id, value] of Object.entries(state)) {
-      if (!value || typeof value !== "object")
-        continue;
-      const lastAttempt = Number(value.lastAttempt);
-      const retryAt = Number(value.retryAt);
-      this.states.set(id, {
-        inFlight: false,
-        lastAttempt: Number.isFinite(lastAttempt) && lastAttempt > 0 ? lastAttempt : 0,
-        retryAt: Number.isFinite(retryAt) && retryAt > 0 ? retryAt : 0
-      });
-    }
-  }
-  state(id) {
-    const current = this.states.get(id);
-    if (current)
-      return current;
-    const next = { inFlight: false, lastAttempt: 0, retryAt: 0 };
-    this.states.set(id, next);
-    return next;
-  }
-  isRefreshing(id) {
-    return this.state(id).inFlight;
-  }
-  nextAllowedAt(id, minIntervalMs, now) {
-    const state = this.state(id);
-    const intervalAt = state.lastAttempt ? state.lastAttempt + minIntervalMs : 0;
-    return Math.max(now, intervalAt, state.retryAt);
-  }
-  begin(id, minIntervalMs, now) {
-    const state = this.state(id);
-    if (state.inFlight)
-      return false;
-    if (state.retryAt && now < state.retryAt)
-      return false;
-    if (state.lastAttempt && now - state.lastAttempt < minIntervalMs)
-      return false;
-    state.inFlight = true;
-    state.lastAttempt = now;
-    return true;
-  }
-  finish(id, retryAt) {
-    const state = this.state(id);
-    state.inFlight = false;
-    if (retryAt)
-      state.retryAt = retryAt;
-  }
-  reset(id) {
-    this.states.delete(id);
-  }
-}
-
-// src/service/snapshot.ts
-import { randomUUID as randomUUID2 } from "node:crypto";
-import { mkdir as mkdir2, readFile as readFile3, rename as rename2, writeFile as writeFile2 } from "node:fs/promises";
-import path3 from "node:path";
-
-// src/service/http.ts
-import https from "node:https";
-
-class HttpError extends Error {
-  code;
-  status;
-  retryAt;
-  constructor(code, message, status, retryAt) {
-    super(message);
-    this.name = "HttpError";
-    this.code = code;
-    this.status = status;
-    this.retryAt = retryAt;
-  }
-}
-var parseRetryAt = (value, now) => {
-  if (!value)
-    return;
-  const raw = Array.isArray(value) ? value[0] : value;
-  const seconds = Number(raw);
-  if (Number.isFinite(seconds))
-    return new Date(now + seconds * 1000).toISOString();
-  const date = Date.parse(raw);
-  return Number.isFinite(date) ? new Date(date).toISOString() : undefined;
-};
-var requestOnce = (url, options, redirects) => new Promise((resolve, reject) => {
-  const target = new URL(url);
-  if (target.protocol !== "https:") {
-    reject(new HttpError("network", "Only HTTPS endpoints are allowed."));
-    return;
-  }
-  const request = https.request(target, {
-    method: options.method ?? "GET",
-    headers: options.headers,
-    timeout: options.timeoutMs ?? 1e4
-  }, (response) => {
-    const status = response.statusCode ?? 0;
-    if (status >= 300 && status < 400) {
-      response.resume();
-      reject(new HttpError("bad_response", "The provider redirected the request."));
-      return;
-    }
-    const chunks = [];
-    let size = 0;
-    response.on("data", (chunk) => {
-      size += chunk.length;
-      if (size > (options.maxBytes ?? 65536)) {
-        request.destroy();
-        reject(new HttpError("bad_response", "The provider response is too large."));
-        return;
-      }
-      chunks.push(chunk);
-    });
-    response.on("end", () => {
-      if (status === 401 || status === 403) {
-        reject(new HttpError("auth", "The provider rejected the credential.", status));
-        return;
-      }
-      if (status === 429) {
-        reject(new HttpError("rate_limited", "The provider rate-limited the request.", status, parseRetryAt(response.headers["retry-after"], Date.now())));
-        return;
-      }
-      if (status < 200 || status >= 300) {
-        reject(new HttpError("provider_error", `The provider returned HTTP ${status}.`, status));
-        return;
-      }
-      const text = Buffer.concat(chunks).toString("utf8");
-      try {
-        resolve({
-          status,
-          body: text ? JSON.parse(text) : null,
-          contentType: response.headers["content-type"]
-        });
-      } catch {
-        reject(new HttpError("bad_response", "The provider returned invalid JSON.", status));
-      }
-    });
-  });
-  request.on("timeout", () => {
-    request.destroy();
-    reject(new HttpError("timeout", "The provider did not answer in time."));
-  });
-  request.on("error", (error) => {
-    if (error instanceof HttpError)
-      reject(error);
-    else
-      reject(new HttpError("network", "Could not reach the provider."));
-  });
-  if (options.body)
-    request.write(options.body);
-  request.end();
-});
-var requestJson = (url, options = {}) => requestOnce(url, options, 0);
-
-// src/providers/parse.ts
-var asRecord = (value) => value && typeof value === "object" && !Array.isArray(value) ? value : null;
-var asNumber = (value) => {
-  const number = typeof value === "string" ? Number(value) : value;
-  return typeof number === "number" && Number.isFinite(number) ? number : null;
-};
-var asString = (value) => typeof value === "string" && value.trim() ? value.trim() : null;
-var asArray = (value) => Array.isArray(value) ? value : [];
-function bad(message) {
-  throw new HttpError("bad_response", message);
-}
-var toIso = (value) => {
-  if (typeof value === "string") {
-    const parsed = Date.parse(value);
-    return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
-  }
-  if (typeof value === "number" && Number.isFinite(value)) {
-    const ms = value > 10000000000 ? value : value * 1000;
-    return new Date(ms).toISOString();
-  }
-  return null;
-};
-
-// src/providers/custom.ts
-var MAX_ITEMS = 20;
-var endpointOf = (connection) => {
-  if (!connection.endpoint)
-    bad("The custom provider has no endpoint.");
-  const parsed = (() => {
-    try {
-      return new URL(connection.endpoint);
-    } catch {
-      return null;
-    }
-  })();
-  if (!parsed)
-    bad("The custom endpoint is not a valid URL.");
-  if (parsed.protocol !== "https:")
-    bad("The custom endpoint must use HTTPS.");
-  if (parsed.username || parsed.password || parsed.search || parsed.hash) {
-    bad("The custom endpoint must not contain credentials, a query, or a fragment.");
-  }
-  return parsed;
-};
-var parseWindow = (value) => {
-  const entry = asRecord(value);
-  if (!entry)
-    bad("A custom window is not an object.");
-  const id = asString(entry.id);
-  const label = asString(entry.label);
-  const remaining = asNumber(entry.remainingPercent);
-  const resetAt = asString(entry.resetAt);
-  const duration = asNumber(entry.durationSeconds);
-  if (!id || !label)
-    bad("A custom window needs an id and label.");
-  if (remaining === null || remaining < 0 || remaining > 100)
-    bad("remainingPercent must be 0–100.");
-  if (!resetAt || !Number.isFinite(Date.parse(resetAt)))
-    bad("A custom window needs a valid resetAt.");
-  if (duration !== null && duration <= 0)
-    bad("durationSeconds must be positive.");
-  const window = {
-    id,
-    label,
-    remainingPercent: remaining,
-    resetAt: new Date(resetAt).toISOString()
-  };
-  if (duration !== null)
-    window.durationSeconds = duration;
-  return window;
-};
-var parseCap = (value) => {
-  const entry = asRecord(value);
-  if (!entry)
-    bad("A custom cap is not an object.");
-  const id = asString(entry.id);
-  const label = asString(entry.label);
-  const used = asNumber(entry.used);
-  const limit = asNumber(entry.limit);
-  const unit = asString(entry.unit);
-  if (!id || !label || !unit)
-    bad("A custom cap needs id, label, and unit.");
-  if (used === null || used < 0)
-    bad("A custom cap needs used >= 0.");
-  if (limit === null || limit <= 0)
-    bad("A custom cap needs limit > 0.");
-  return { id, label, used, limit, unit };
-};
-var parseBalance = (value) => {
-  const entry = asRecord(value);
-  if (!entry)
-    bad("A custom balance is not an object.");
-  const id = asString(entry.id);
-  const label = asString(entry.label);
-  const amount = asNumber(entry.value);
-  const unit = asString(entry.unit);
-  if (!id || !label || !unit)
-    bad("A custom balance needs id, label, and unit.");
-  if (amount === null)
-    bad("A custom balance needs a numeric value.");
-  return { id, label, value: amount, unit };
-};
-var parsePayload = (value) => {
-  const payload = asRecord(value);
-  if (!payload || payload.version !== 1)
-    bad("The custom provider must return openchamber-quota-v1.");
-  const windows = asArray(payload.windows);
-  const caps = asArray(payload.caps);
-  const balances = asArray(payload.balances);
-  if (windows.length > MAX_ITEMS || caps.length > MAX_ITEMS || balances.length > MAX_ITEMS) {
-    bad("The custom provider returned too many items.");
-  }
-  if (!windows.length && !caps.length && !balances.length) {
-    bad("The custom provider returned no windows, caps, or balances.");
-  }
-  return {
-    windows: windows.map(parseWindow),
-    caps: caps.map(parseCap),
-    balances: balances.map(parseBalance)
-  };
-};
-var customAdapter = {
-  kind: "custom",
-  minIntervalMs: 5 * 60000,
-  fetch: async (connection, context) => {
-    const endpoint = endpointOf(connection);
-    const apiKey = connection.secret.apiKey;
-    if (!apiKey)
-      throw new HttpError("not_configured", "The custom provider has no key.");
-    const response = await context.requestJson(endpoint.toString(), {
-      headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
-      timeoutMs: 1e4,
-      maxBytes: 65536
-    });
-    if (response.contentType && !response.contentType.toLowerCase().includes("application/json")) {
-      bad("The custom provider must return application/json.");
-    }
-    return parsePayload(response.body);
-  }
-};
-
-// src/providers/codex.ts
-import { readFile as readFile2 } from "node:fs/promises";
+// src/core/bridge-path.ts
+import { createHash } from "node:crypto";
 import os from "node:os";
-import path2 from "node:path";
-var labelFor = (seconds) => {
-  if (!seconds)
-    return "Limit";
-  if (seconds <= 6 * 3600)
-    return "5h";
-  if (seconds <= 8 * 86400)
-    return "7d";
-  if (seconds <= 32 * 86400)
-    return "30d";
-  return `${Math.round(seconds / 86400)}d`;
-};
-var readCodexLogin = async (codexHome) => {
-  try {
-    const raw = JSON.parse(await readFile2(path2.join(codexHome, "auth.json"), "utf8"));
-    if (typeof raw.tokens?.access_token !== "string" || !raw.tokens.access_token)
-      return null;
-    return {
-      accessToken: raw.tokens.access_token,
-      accountId: typeof raw.tokens.account_id === "string" ? raw.tokens.account_id : undefined
-    };
-  } catch {
-    return null;
-  }
-};
-var resetAtFor = (entry, now) => {
-  const direct = toIso(entry.reset_at);
-  if (direct)
-    return direct;
-  const after = asNumber(entry.reset_after_seconds);
-  return after !== null && after > 0 ? new Date(now + after * 1000).toISOString() : null;
-};
-var parseWindow2 = (value, index, now) => {
-  const entry = asRecord(value);
-  if (!entry)
-    return null;
-  const used = asNumber(entry.used_percent);
-  const resetAt = resetAtFor(entry, now);
-  const seconds = asNumber(entry.limit_window_seconds);
-  const window = {
-    id: `window-${index}`,
-    label: labelFor(seconds)
-  };
-  if (used === null || !resetAt) {
-    window.error = {
-      code: "bad_response",
-      message: used === null ? "Usage unavailable." : "Reset time unavailable."
-    };
-    return window;
-  }
-  window.remainingPercent = Math.min(100, Math.max(0, 100 - used));
-  window.resetAt = resetAt;
-  if (seconds !== null && seconds > 0)
-    window.durationSeconds = seconds;
-  return window;
-};
-var codexAdapter = {
-  kind: "codex",
-  minIntervalMs: 5 * 60000,
-  fetch: async (connection, context) => {
-    const imported = connection.secret.accessToken ? { accessToken: connection.secret.accessToken, accountId: connection.secret.accountId } : await readCodexLogin(context.codexHome ?? path2.join(os.homedir(), ".codex"));
-    if (!imported)
-      throw new HttpError("not_configured", "No OpenAI / Codex login was found. Run `codex login`.");
-    const headers = {
-      Accept: "application/json",
-      Authorization: `Bearer ${imported.accessToken}`,
-      "User-Agent": "OpenChamber quota display"
-    };
-    if (imported.accountId)
-      headers["ChatGPT-Account-Id"] = imported.accountId;
-    const response = await context.requestJson("https://chatgpt.com/backend-api/wham/usage", {
-      headers,
-      timeoutMs: 15000
-    }).catch((error) => {
-      if (error instanceof HttpError && error.code === "auth") {
-        throw new HttpError("auth", "OpenAI / Codex login was rejected. Run `codex login` and try again.");
-      }
-      throw error;
-    });
-    const body = asRecord(response.body) ?? {};
-    const rateLimit = asRecord(body.rate_limit) ?? {};
-    const now = context.now();
-    const windows = [];
-    for (const [index, key] of ["primary_window", "secondary_window"].entries()) {
-      const window = parseWindow2(rateLimit[key], index, now);
-      if (window)
-        windows.push(window);
-    }
-    const monthlySeconds = 2628000;
-    const spend = asRecord(body.spend_control);
-    const individualLimit = asRecord(spend?.individual_limit);
-    const remaining = asNumber(individualLimit?.remaining_percent);
-    const spendReset = individualLimit ? resetAtFor(individualLimit, now) : null;
-    if (!windows.some((window) => window.durationSeconds === monthlySeconds) && remaining !== null && spendReset) {
-      windows.push({
-        id: "spend-monthly",
-        label: "30d",
-        remainingPercent: Math.min(100, Math.max(0, remaining)),
-        resetAt: spendReset,
-        durationSeconds: monthlySeconds
-      });
-    }
-    const balances = [];
-    const credits = asRecord(body.credits);
-    const balance = asNumber(credits?.balance);
-    if (credits?.has_credits === true && balance !== null) {
-      balances.push({ id: "credits", label: "Credits", value: balance, unit: "credits" });
-    }
-    if (!windows.length && !balances.length) {
-      throw new HttpError("bad_response", "Codex returned no usable quota data.");
-    }
-    return { windows, caps: [], balances };
-  }
-};
+import path from "node:path";
 
-// src/providers/opencode-go.ts
-var FIELDS = [
-  { key: "rolling", consoleKey: "fiveHour", label: "5h", seconds: 5 * 3600 },
-  { key: "weekly", consoleKey: "week", label: "7d", seconds: 7 * 86400 },
-  { key: "monthly", consoleKey: "month", label: "30d", seconds: 30 * 86400 }
+// src/core/bridge.ts
+var BRIDGE_PROVIDERS = [
+  { id: "openrouter", connectionId: "bridge-openrouter", kind: "openrouter", label: "OpenRouter" },
+  { id: "opencode-go", connectionId: "bridge-opencode-go", kind: "opencode-go", label: "OpenCode Go" },
+  { id: "opencode", connectionId: "bridge-opencode-zen", kind: "opencode-zen", label: "OpenCode Zen" },
+  { id: "openai", connectionId: "bridge-codex", kind: "codex", label: "OpenAI" },
+  { id: "tavily", connectionId: "bridge-tavily", kind: "tavily", label: "Tavily" },
+  { id: "exa", connectionId: "bridge-exa", kind: "exa", label: "Exa" }
 ];
-var CONSOLE_PRODUCTS = new Set(["go", "go-plus", "go-teams"]);
-var remainingPercent = (usedPercent) => Math.min(100, Math.max(0, 100 - usedPercent));
-var parseConsoleWindows = (payload) => {
-  const body = asRecord(payload);
-  if (typeof body?.product !== "string" || !CONSOLE_PRODUCTS.has(body.product))
-    return [];
-  const meters = asRecord(asRecord(body.access)?.meters);
-  const windows = [];
-  for (const field of FIELDS) {
-    const entry = asRecord(meters?.[field.consoleKey]);
-    const used = asNumber(entry?.usedMicroCents);
-    const limit = asNumber(entry?.limitMicroCents);
-    const resetAt = toIso(entry?.resetsAt);
-    if (used === null || used < 0 || limit === null || limit <= 0 || !resetAt)
-      continue;
-    windows.push({
-      id: field.key,
-      label: field.label,
-      remainingPercent: remainingPercent(used / limit * 100),
-      resetAt,
-      durationSeconds: field.seconds
-    });
-  }
-  return windows;
+var BRIDGE_PROVIDER_IDS = BRIDGE_PROVIDERS.map((provider) => provider.id);
+var BRIDGE_ROWS = new Map(BRIDGE_PROVIDERS.map((provider) => [provider.id, provider]));
+var BRIDGE_CONNECTION_IDS = BRIDGE_PROVIDERS.map((provider) => provider.connectionId);
+var isBridgeConnectionId = (id) => BRIDGE_PROVIDERS.some((provider) => provider.connectionId === id);
+var MANAGED_KINDS = [
+  "openrouter",
+  "opencode-go",
+  "opencode-zen",
+  "codex",
+  "tavily",
+  "exa"
+];
+var isManagedKind = (kind) => MANAGED_KINDS.includes(kind);
+var BridgeTiming = {
+  fetchIntervalMs: 300000,
+  statePollMs: 1000,
+  fetchTimeoutMs: 1e4,
+  publicationAllowanceMs: 1000,
+  refreshTimeoutMs: 12000,
+  sectionWaitMs: 15000,
+  staleAfterMs: 600000
 };
-var openCodeGoAdapter = {
-  kind: "opencode-go",
-  minIntervalMs: 5 * 60000,
-  fetch: async (connection, context) => {
-    const apiKey = connection.secret.apiKey;
-    if (!apiKey)
-      throw new HttpError("not_configured", "OpenCode Go has no API key.");
-    const requestOptions = {
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${apiKey}`,
-        "x-opencode-session": "openchamber-quota",
-        "User-Agent": "OpenChamber quota display"
-      },
-      timeoutMs: 15000
-    };
-    let consoleWindows = [];
-    try {
-      const status = await context.requestJson("https://opencode.ai/console/api/go/status", requestOptions);
-      consoleWindows = parseConsoleWindows(status.body);
-    } catch (error) {
-      if (error instanceof HttpError && error.code === "rate_limited")
-        throw error;
-    }
-    if (consoleWindows.length === FIELDS.length) {
-      return { windows: consoleWindows, caps: [], balances: [] };
-    }
-    let usage = null;
-    try {
-      const response = await context.requestJson("https://opencode.ai/zen/go/v1/usage", requestOptions);
-      usage = asRecord(asRecord(response.body)?.usage);
-    } catch (error) {
-      if (!consoleWindows.length || error instanceof HttpError && error.code === "rate_limited") {
-        throw error;
-      }
-    }
-    const windows = [];
-    for (const field of FIELDS) {
-      const consoleWindow = consoleWindows.find((window) => window.id === field.key);
-      if (consoleWindow) {
-        windows.push(consoleWindow);
-        continue;
-      }
-      const entry = asRecord(usage?.[field.key]);
-      if (!entry)
-        continue;
-      const used = asNumber(entry.percent);
-      const resetAt = toIso(entry.resetsAt);
-      if (used === null || !resetAt) {
-        windows.push({
-          id: field.key,
-          label: field.label,
-          error: {
-            code: "bad_response",
-            message: used === null ? "Usage unavailable." : "Reset time unavailable."
-          }
-        });
-        continue;
-      }
-      windows.push({
-        id: field.key,
-        label: field.label,
-        remainingPercent: remainingPercent(used),
-        resetAt,
-        durationSeconds: field.seconds
-      });
-    }
-    if (!windows.length)
-      throw new HttpError("bad_response", "OpenCode Go returned no usable windows.");
-    return { windows, caps: [], balances: [] };
-  }
+var bridgeMinimums = () => {
+  const result = {};
+  for (const id of BRIDGE_PROVIDER_IDS)
+    result[id] = BridgeTiming.fetchIntervalMs;
+  return result;
 };
+var PROVIDER_MIN_INTERVAL_MS = 300000;
+var EVENT_MIN_INTERVAL_MS = 30000;
+var BACKOFF_FIRST_MS = 60000;
+var BACKOFF_MAX_MS = 15 * 60000;
+var backoffMs = (failures) => failures <= 0 ? 0 : Math.min(BACKOFF_MAX_MS, BACKOFF_FIRST_MS * 2 ** (failures - 1));
+var RETRY_WAIT_MAX_MS = 24 * 60 * 60000;
 
-// src/providers/opencode-zen.ts
-var MICRO_CENTS_PER_DOLLAR = 1e8;
-var usd = (microCents) => microCents / MICRO_CENTS_PER_DOLLAR;
-var openCodeZenAdapter = {
-  kind: "opencode-zen",
-  minIntervalMs: 5 * 60000,
-  fetch: async (connection, context) => {
-    const token = connection.secret.apiKey ?? connection.secret.accessToken;
-    if (!token)
-      throw new HttpError("not_configured", "OpenCode Zen has no key or token.");
-    const headers = {
-      Accept: "application/json",
-      Authorization: `Bearer ${token}`,
-      "x-opencode-session": "openchamber-quota",
-      "User-Agent": "OpenChamber quota display"
-    };
-    if (connection.accountId)
-      headers["x-org-id"] = connection.accountId;
-    const usage = await context.requestJson("https://opencode.ai/console/api/usage/models?range=30d&page=1&pageSize=50", { headers, timeoutMs: 15000 });
-    const usageBody = asRecord(usage.body) ?? {};
-    const requests = asNumber(usageBody.requests) ?? asArray(usageBody.items).length;
-    const balances = [{ id: "requests", label: "Requests (30d)", value: requests, unit: "requests" }];
-    let caps = [];
-    try {
-      const budgets = await context.requestJson("https://opencode.ai/console/api/budgets/service-accounts/status", { headers, timeoutMs: 15000 });
-      const rows = asArray(budgets.body);
-      caps = rows.flatMap((row, index) => {
-        const entry = asRecord(row);
-        if (!entry)
-          return [];
-        const spent = asNumber(entry.spentMicroCents);
-        const limit = asNumber(entry.limitMicroCents);
-        if (spent === null || limit === null || limit <= 0)
-          return [];
-        const name = (asString(entry.name) ?? asString(entry.serviceAccountId) ?? `Budget ${index + 1}`).slice(0, 40);
-        return [{ id: `budget-${index}`, label: name, used: usd(spent), limit: usd(limit), unit: "USD" }];
-      });
-    } catch {
-      caps = [];
-    }
-    return { windows: [], caps, balances };
+// src/core/bridge-path.ts
+var PLATFORM = process.platform;
+var canonicalDataDir = (dataDir) => path.resolve(dataDir).replace(/[\\/]+$/, "") || path.parse(path.resolve(dataDir)).root;
+var serverIdFor = (dataDir) => createHash("sha256").update(canonicalDataDir(dataDir)).digest("hex");
+var bridgesDir = (env = process.env, home = os.homedir()) => {
+  if (PLATFORM === "win32") {
+    const local = env.LOCALAPPDATA ?? path.join(home, "AppData", "Local");
+    return path.join(local, "openchamber-quota", "bridges");
   }
+  const configHome = env.XDG_CONFIG_HOME ?? path.join(home, ".config");
+  return path.join(configHome, "openchamber-quota", "bridges");
 };
-
-// src/providers/openrouter.ts
-var PERIOD_SECONDS = {
-  daily: 86400,
-  weekly: 604800
-};
-var calendarPeriod = (period, now) => {
-  if (period === "daily") {
-    const date = new Date(now);
-    const next = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1);
-    return { resetAt: new Date(next).toISOString(), seconds: PERIOD_SECONDS.daily };
-  }
-  if (period === "weekly") {
-    const date = new Date(now);
-    const day = date.getUTCDay();
-    const next = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + ((8 - day) % 7 || 7));
-    return { resetAt: new Date(next).toISOString(), seconds: PERIOD_SECONDS.weekly };
-  }
-  if (period === "monthly") {
-    const date = new Date(now);
-    const first = Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1);
-    const previous = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1);
-    return {
-      resetAt: new Date(first).toISOString(),
-      seconds: Math.round((first - previous) / 1000)
-    };
-  }
-  return null;
-};
-var openRouterAdapter = {
-  kind: "openrouter",
-  minIntervalMs: 5 * 60000,
-  fetch: async (connection, context) => {
-    const apiKey = connection.secret.apiKey;
-    if (!apiKey)
-      throw new HttpError("not_configured", "OpenRouter has no API key.");
-    const response = await context.requestJson("https://openrouter.ai/api/v1/key", {
-      headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
-      timeoutMs: 1e4
-    });
-    const body = asRecord(response.body) ?? {};
-    const data = asRecord(body.data) ?? body;
-    const limit = asNumber(data.limit);
-    const remaining = asNumber(data.limit_remaining);
-    const usageMonthly = asNumber(data.usage_monthly);
-    const resetPeriod = asString(data.limit_reset);
-    if (limit !== null && limit > 0) {
-      const period = resetPeriod ? calendarPeriod(resetPeriod, context.now()) : null;
-      const label = resetPeriod === "daily" ? "1d" : resetPeriod === "weekly" ? "7d" : "30d";
-      if (period) {
-        if (remaining === null) {
-          return {
-            windows: [
-              {
-                id: "limit",
-                label,
-                resetAt: period.resetAt,
-                durationSeconds: period.seconds,
-                error: { code: "bad_response", message: "Remaining limit unavailable." }
-              }
-            ],
-            caps: [],
-            balances: []
-          };
-        }
-        return {
-          windows: [
-            {
-              id: "limit",
-              label,
-              remainingPercent: Math.min(100, Math.max(0, remaining / limit * 100)),
-              resetAt: period.resetAt,
-              durationSeconds: period.seconds
-            }
-          ],
-          caps: [],
-          balances: []
-        };
-      }
-      if (remaining !== null) {
-        return {
-          windows: [],
-          caps: [
-            {
-              id: "limit",
-              label: "Key limit",
-              used: Math.max(0, limit - remaining),
-              limit,
-              unit: "USD"
-            }
-          ],
-          balances: []
-        };
-      }
-    }
-    const balances = [];
-    if (usageMonthly !== null) {
-      balances.push({ id: "monthly-spend", label: "Monthly spend", value: usageMonthly, unit: "USD" });
-    }
-    return { windows: [], caps: [], balances };
-  }
-};
-
-// src/providers/tavily.ts
-var monthPeriod = (now) => {
-  const date = new Date(now);
-  const first = Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1);
-  const previous = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1);
-  return {
-    resetAt: new Date(first).toISOString(),
-    seconds: Math.round((first - previous) / 1000)
-  };
-};
-var monthlyWindow = (id, label, used, limit, unit, now) => {
-  const period = monthPeriod(now);
-  return {
-    id,
-    label,
-    remainingPercent: Math.min(100, Math.max(0, (limit - used) / limit * 100)),
-    resetAt: period.resetAt,
-    durationSeconds: period.seconds,
-    used: { value: used, unit },
-    limit: { value: limit, unit }
-  };
-};
-var tavilyAdapter = {
-  kind: "tavily",
-  minIntervalMs: 10 * 60000,
-  fetch: async (connection, context) => {
-    const apiKey = connection.secret.apiKey;
-    if (!apiKey)
-      throw new HttpError("not_configured", "Tavily has no API key.");
-    const response = await context.requestJson("https://api.tavily.com/usage", {
-      headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
-      timeoutMs: 1e4
-    });
-    const body = asRecord(response.body) ?? {};
-    const key = asRecord(body.key) ?? {};
-    const account = asRecord(body.account) ?? {};
-    const windows = [];
-    const balances = [];
-    const now = context.now();
-    const planLimit = asNumber(account.plan_limit);
-    const planUsage = asNumber(account.plan_usage);
-    if (planLimit !== null && planLimit > 0 && planUsage !== null && planUsage >= 0) {
-      windows.push(monthlyWindow("plan", "Credits", planUsage, planLimit, "credits", now));
-    }
-    const keyLimit = asNumber(key.limit);
-    const keyUsage = asNumber(key.usage);
-    if (keyLimit !== null && keyLimit > 0 && keyUsage !== null && keyUsage >= 0) {
-      windows.push(monthlyWindow("key", "Key", keyUsage, keyLimit, "credits", now));
-    }
-    const paygoLimit = asNumber(account.paygo_limit);
-    const paygoUsage = asNumber(account.paygo_usage);
-    if (paygoLimit !== null && paygoLimit > 0 && paygoUsage !== null && paygoUsage >= 0) {
-      windows.push(monthlyWindow("paygo", "PAYG", paygoUsage, paygoLimit, "units", now));
-    } else if (paygoUsage !== null) {
-      balances.push({ id: "paygo-used", label: "Pay-as-you-go used", value: paygoUsage, unit: "units" });
-    }
-    return { windows, caps: [], balances };
-  }
-};
-
-// src/providers/index.ts
-var ADAPTERS = {
-  custom: customAdapter,
-  codex: codexAdapter,
-  "opencode-go": openCodeGoAdapter,
-  "opencode-zen": openCodeZenAdapter,
-  openrouter: openRouterAdapter,
-  tavily: tavilyAdapter
-};
-
-// src/providers/validate.ts
-var MAX_ID = 80;
-var MAX_LABEL = 40;
-var MAX_UNIT = 16;
-var text = (value, max) => typeof value === "string" && value.length >= 1 && value.length <= max;
-var amount = (value) => value === undefined || Number.isFinite(value.value) && text(value.unit, MAX_UNIT);
-var error = (value) => text(value.message, 200) && ["not_configured", "auth", "rate_limited", "timeout", "network", "bad_response", "provider_error"].includes(value.code) && (value.retryAt === undefined || Number.isFinite(Date.parse(value.retryAt)));
-var window = (value) => {
-  if (!text(value.id, MAX_ID) || !text(value.label, MAX_LABEL))
+var descriptorPath = (serverId, env = process.env, home = os.homedir()) => path.join(bridgesDir(env, home), `${serverId}.json`);
+var isBridgeDescriptor = (value) => {
+  if (!value || typeof value !== "object" || Array.isArray(value))
     return false;
-  if (value.error !== undefined)
-    return error(value.error);
-  if (typeof value.remainingPercent !== "number" || !Number.isFinite(value.remainingPercent))
+  const entry = value;
+  if (entry.version !== 1)
     return false;
-  if (value.remainingPercent < 0 || value.remainingPercent > 100)
+  if (typeof entry.serverId !== "string" || !/^[0-9a-f]{64}$/.test(entry.serverId))
     return false;
-  if (!value.resetAt || !Number.isFinite(Date.parse(value.resetAt)))
+  if (typeof entry.port !== "number" || !Number.isInteger(entry.port))
     return false;
-  if (value.durationSeconds !== undefined && (!Number.isFinite(value.durationSeconds) || value.durationSeconds <= 0)) {
+  if (entry.port < 1 || entry.port > 65535)
+    return false;
+  if (typeof entry.token !== "string" || entry.token.length < 16 || entry.token.length > 256) {
     return false;
   }
-  return amount(value.used) && amount(value.limit);
-};
-var cap = (value) => text(value.id, MAX_ID) && text(value.label, MAX_LABEL) && Number.isFinite(value.used) && value.used >= 0 && Number.isFinite(value.limit) && value.limit > 0 && text(value.unit, MAX_UNIT);
-var balance = (value) => text(value.id, MAX_ID) && text(value.label, MAX_LABEL) && Number.isFinite(value.value) && text(value.unit, MAX_UNIT);
-var assertAdapterResult = (result) => {
-  if (!Array.isArray(result.windows) || !Array.isArray(result.caps) || !Array.isArray(result.balances) || !result.windows.every(window) || !result.caps.every(cap) || !result.balances.every(balance)) {
-    throw new HttpError("bad_response", "The provider returned invalid quota data.");
+  if (!Array.isArray(entry.providers) || entry.providers.length !== BRIDGE_PROVIDER_IDS.length) {
+    return false;
   }
+  const ids = new Set;
+  for (const provider of entry.providers) {
+    if (!BRIDGE_PROVIDER_IDS.includes(provider))
+      return false;
+    ids.add(provider);
+  }
+  if (ids.size !== BRIDGE_PROVIDER_IDS.length)
+    return false;
+  return typeof entry.createdAt === "string" && Number.isFinite(Date.parse(entry.createdAt));
 };
+
+// src/service/bridge.ts
+import { randomUUID } from "node:crypto";
 
 // src/service/snapshot-schema.ts
 var import__2020 = __toESM(require__2020(), 1);
@@ -8678,6 +7889,7 @@ var quota_snapshot_schema_default = {
           enum: [
             "custom",
             "codex",
+            "exa",
             "opencode-go",
             "openrouter",
             "tavily",
@@ -8923,6 +8135,1687 @@ var ajv = new import__2020.default;
 import_ajv_formats.default(ajv, ["date-time"]);
 var validateSnapshot = ajv.compile(quota_snapshot_schema_default);
 
+// src/core/snapshot-merge.ts
+var clone = (value) => structuredClone(value);
+var sanitizeMessage = (value, max = 200) => {
+  const text = value.replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer [redacted]").replace(/\b(sk|tvly|key|token)-[A-Za-z0-9._-]{6,}/gi, "$1-[redacted]").replace(/\b[0-9a-f]{32,}\b/gi, "[redacted]").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+  return (text || "The request failed.").slice(0, max);
+};
+var notConfiguredEntry = (provider) => ({
+  connectionId: provider.connectionId,
+  kind: provider.kind,
+  label: provider.label,
+  state: "unconfigured",
+  windows: [],
+  caps: [],
+  balances: [],
+  refreshing: false,
+  error: {
+    code: "not_configured",
+    message: `Sign in to ${provider.label} in OpenCode, then refresh.`
+  }
+});
+var bridgeUnavailableMessage = "The OpenCode plugin is unavailable; showing the last reading.";
+var bridgeNeverReadMessage = "The OpenCode plugin is not connected. If you just approved the extension, restart OpenCode or OpenChamber.";
+var bridgeWaitingMessage = "Waiting for the next scheduled refresh.";
+var stale = (sample, message) => ({
+  ...clone(sample),
+  state: "ok",
+  refreshing: false,
+  error: { code: "provider_error", message: sanitizeMessage(message) }
+});
+var transient = (error) => !error || !["auth", "not_configured"].includes(error.code);
+var bridgeLevel = (error) => error?.message === bridgeWaitingMessage || error?.message === bridgeUnavailableMessage || error?.message === bridgeNeverReadMessage;
+var mergeBridgeResult = (state, incoming, now) => {
+  const current = { ...state.current };
+  const lastSuccess = { ...state.lastSuccess };
+  const byId = new Map(incoming.map((provider) => [provider.connectionId, provider]));
+  for (const row of BRIDGE_PROVIDERS) {
+    const provider = byId.get(row.connectionId);
+    if (!provider)
+      continue;
+    const previous = current[row.connectionId];
+    if (provider.error?.message === bridgeWaitingMessage && previous && (previous.state === "unconfigured" || previous.error?.code === "auth")) {
+      continue;
+    }
+    if (provider.state === "ok") {
+      const fresh = clone(provider);
+      current[row.connectionId] = fresh;
+      lastSuccess[row.connectionId] = clone(fresh);
+      continue;
+    }
+    if (provider.state === "unconfigured") {
+      current[row.connectionId] = clone(provider);
+      continue;
+    }
+    if (provider.state === "error" || provider.state === "loading") {
+      const rejected = previous?.state === "unconfigured" || previous?.error?.code === "auth";
+      if (rejected) {
+        if (bridgeLevel(provider.error))
+          continue;
+        delete lastSuccess[row.connectionId];
+        current[row.connectionId] = clone(provider);
+        continue;
+      }
+      const sample = lastSuccess[row.connectionId];
+      if (sample && transient(provider.error)) {
+        current[row.connectionId] = stale(sample, provider.error?.message ?? "The provider did not return a reading.");
+      } else {
+        current[row.connectionId] = clone(provider);
+      }
+      continue;
+    }
+    current[row.connectionId] = clone(provider);
+  }
+  return { current, lastSuccess };
+};
+var markBridgeUnavailable = (state, now, message = bridgeUnavailableMessage, previouslyConnected = true) => {
+  const current = { ...state.current };
+  for (const row of BRIDGE_PROVIDERS) {
+    const existing = state.current[row.connectionId];
+    if (existing?.error?.code === "auth" || previouslyConnected && existing?.state === "unconfigured")
+      continue;
+    const sample = state.lastSuccess[row.connectionId];
+    if (sample) {
+      current[row.connectionId] = stale(sample, message);
+      continue;
+    }
+    const attempted = existing !== undefined && existing.state !== "unconfigured" && existing.error?.code !== "not_configured";
+    current[row.connectionId] = {
+      ...existing ? clone(existing) : notConfiguredEntry(row),
+      connectionId: row.connectionId,
+      kind: row.kind,
+      label: row.label,
+      state: "error",
+      windows: [],
+      caps: [],
+      balances: [],
+      refreshing: false,
+      error: {
+        code: "provider_error",
+        message: attempted ? message : bridgeNeverReadMessage
+      }
+    };
+  }
+  return { current, lastSuccess: { ...state.lastSuccess } };
+};
+var markBridgePending = (state, pending) => {
+  const current = { ...state.current };
+  for (const row of BRIDGE_PROVIDERS) {
+    const existing = current[row.connectionId];
+    if (!existing)
+      continue;
+    current[row.connectionId] = { ...existing, refreshing: pending };
+  }
+  return { current, lastSuccess: state.lastSuccess };
+};
+var isStaleSample = (provider, now) => {
+  if (!provider.fetchedAt)
+    return false;
+  const fetched = Date.parse(provider.fetchedAt);
+  return Number.isFinite(fetched) && now - fetched >= BridgeTiming.staleAfterMs;
+};
+
+// src/service/bridge.ts
+var isRecord = (value) => !!value && typeof value === "object" && !Array.isArray(value);
+var isIsoDate = (value) => typeof value === "string" && Number.isFinite(Date.parse(value));
+var bridgeFields = new Set(["version", "serverId", "requestId", "generatedAt", "providers"]);
+
+class BridgeService {
+  deps;
+  requestId = null;
+  deadlineAt = null;
+  lastAcceptedGeneratedAt = 0;
+  expired = false;
+  now;
+  constructor(deps) {
+    this.deps = deps;
+    this.now = deps.now ?? Date.now;
+  }
+  admit() {
+    const now = this.now();
+    this.expire(now);
+    if (this.requestId && this.deadlineAt && now < this.deadlineAt) {
+      return { requestId: this.requestId, deadlineAt: this.deadlineAt };
+    }
+    this.requestId = `refresh-${randomUUID()}`;
+    this.deadlineAt = now + BridgeTiming.refreshTimeoutMs;
+    return { requestId: this.requestId, deadlineAt: this.deadlineAt };
+  }
+  pending() {
+    return this.requestId !== null;
+  }
+  lastPublication() {
+    return this.lastAcceptedGeneratedAt;
+  }
+  restorePublication(value) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      this.lastAcceptedGeneratedAt = Math.max(this.lastAcceptedGeneratedAt, value);
+    }
+  }
+  isExpired() {
+    this.expire(this.now());
+    const expired = this.expired;
+    this.expired = false;
+    return expired;
+  }
+  expire(now = this.now()) {
+    if (this.requestId && this.deadlineAt !== null && now >= this.deadlineAt) {
+      this.requestId = null;
+      this.deadlineAt = null;
+      this.expired = true;
+      return true;
+    }
+    return false;
+  }
+  state() {
+    const now = this.now();
+    this.expire(now);
+    return {
+      version: 1,
+      serverId: this.deps.serverId,
+      providers: [...BRIDGE_PROVIDER_IDS],
+      refreshRequested: this.requestId !== null,
+      requestId: this.requestId,
+      deadlineAt: this.deadlineAt,
+      providerMinimums: bridgeMinimums(),
+      serverTime: now
+    };
+  }
+  accept(input) {
+    const now = this.now();
+    this.expire(now);
+    if (!isRecord(input))
+      return { ok: false, status: 400, message: "Body must be a JSON object." };
+    if (Object.keys(input).some((key) => !bridgeFields.has(key))) {
+      return { ok: false, status: 400, message: "Unknown bridge snapshot field." };
+    }
+    if (input.version !== 1)
+      return { ok: false, status: 400, message: "Unsupported bridge version." };
+    if (input.serverId !== this.deps.serverId) {
+      return { ok: false, status: 400, message: "Bridge snapshot belongs to another server." };
+    }
+    if (input.requestId !== null && (typeof input.requestId !== "string" || !input.requestId || input.requestId.length > 200)) {
+      return { ok: false, status: 400, message: "requestId must be a string or null." };
+    }
+    if (!isIsoDate(input.generatedAt)) {
+      return { ok: false, status: 400, message: "generatedAt must be a date-time." };
+    }
+    if (!Array.isArray(input.providers)) {
+      return { ok: false, status: 400, message: "providers must be an array." };
+    }
+    const providers = input.providers;
+    if (providers.length !== BRIDGE_PROVIDERS.length) {
+      return { ok: false, status: 400, message: "A bridge result needs exactly six providers." };
+    }
+    const seenIds = new Set;
+    const seenKinds = new Set;
+    for (const provider of providers) {
+      if (!isRecord(provider))
+        return { ok: false, status: 400, message: "Invalid provider entry." };
+      const row = BRIDGE_PROVIDERS.find((candidate) => candidate.connectionId === provider.connectionId);
+      if (!row || row.kind !== provider.kind || row.label !== provider.label) {
+        return { ok: false, status: 400, message: "A bridge result has an undeclared provider." };
+      }
+      if (seenIds.has(provider.connectionId) || seenKinds.has(provider.kind)) {
+        return { ok: false, status: 400, message: "A bridge result has duplicate providers." };
+      }
+      if (provider.state === "loading" || provider.refreshing !== false) {
+        return { ok: false, status: 400, message: "A completed bridge result cannot still be refreshing." };
+      }
+      if (provider.state === "unconfigured" && (Array.isArray(provider.windows) && provider.windows.length > 0 || Array.isArray(provider.caps) && provider.caps.length > 0 || Array.isArray(provider.balances) && provider.balances.length > 0 || provider.error?.code !== "not_configured")) {
+        return {
+          ok: false,
+          status: 400,
+          message: "An unconfigured provider cannot report usage."
+        };
+      }
+      seenIds.add(provider.connectionId);
+      seenKinds.add(provider.kind);
+    }
+    if (!validateSnapshot({
+      version: 1,
+      generatedAt: input.generatedAt,
+      providers
+    })) {
+      return { ok: false, status: 400, message: "Invalid bridge snapshot." };
+    }
+    const generatedAt = Date.parse(input.generatedAt);
+    const requestId = input.requestId;
+    if (requestId !== null) {
+      if (this.requestId !== requestId) {
+        return {
+          ok: false,
+          status: 409,
+          message: "The request is no longer pending; the result was not applied."
+        };
+      }
+    }
+    if (generatedAt < this.lastAcceptedGeneratedAt) {
+      return {
+        ok: false,
+        status: 409,
+        message: "An older result cannot replace newer data."
+      };
+    }
+    const snapshot = {
+      version: 1,
+      serverId: this.deps.serverId,
+      requestId,
+      generatedAt: input.generatedAt,
+      providers: providers.map((provider) => ({
+        ...provider,
+        windows: provider.windows.map((window) => window.error ? { ...window, error: { ...window.error, message: sanitizeMessage(window.error.message) } } : window),
+        ...provider.error ? { error: { ...provider.error, message: sanitizeMessage(provider.error.message) } } : {}
+      }))
+    };
+    this.lastAcceptedGeneratedAt = Math.max(this.lastAcceptedGeneratedAt, generatedAt);
+    if (requestId !== null) {
+      this.requestId = null;
+      this.deadlineAt = null;
+    }
+    return { ok: true, snapshot };
+  }
+}
+
+// src/service/bridge-descriptor.ts
+import { randomBytes } from "node:crypto";
+import { chmod, mkdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+var LOCK_STALE_MS = 2000;
+var LOCK_WAIT_MS = 3000;
+var pause = (ms) => new Promise((resolve) => {
+  const timer = setTimeout(resolve, ms);
+  timer.unref?.();
+});
+var withDescriptorLock = async (file, action) => {
+  const lock = `${file}.lock`;
+  const startedAt = Date.now();
+  for (;; ) {
+    try {
+      await mkdir(lock);
+      break;
+    } catch (error) {
+      if (error.code !== "EEXIST")
+        throw error;
+      try {
+        const info = await stat(lock);
+        if (Date.now() - info.mtimeMs > LOCK_STALE_MS) {
+          await rm(lock, { recursive: true, force: true });
+          continue;
+        }
+      } catch {
+        continue;
+      }
+      if (Date.now() - startedAt > LOCK_WAIT_MS) {
+        throw new Error("Timed out waiting for the bridge descriptor lock.");
+      }
+      await pause(5);
+    }
+  }
+  try {
+    return await action();
+  } finally {
+    await rm(lock, { recursive: true, force: true }).catch(() => {
+      return;
+    });
+  }
+};
+
+class BridgeDescriptorWriter {
+  now;
+  directory;
+  file;
+  data;
+  constructor(serverId, port, now = Date.now) {
+    this.now = now;
+    this.directory = bridgesDir();
+    this.file = descriptorPath(serverId);
+    this.data = {
+      version: 1,
+      serverId,
+      port,
+      token: randomBytes(32).toString("hex"),
+      providers: [...BRIDGE_PROVIDER_IDS],
+      createdAt: new Date(now()).toISOString()
+    };
+  }
+  descriptor() {
+    return structuredClone(this.data);
+  }
+  async publish() {
+    await mkdir(this.directory, { recursive: true, mode: 448 });
+    try {
+      await chmod(this.directory, 448);
+    } catch {}
+    await withDescriptorLock(this.file, async () => {
+      const temp = `${this.file}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
+      await writeFile(temp, JSON.stringify(this.data, null, 2), { mode: 384 });
+      await rename(temp, this.file);
+    });
+  }
+  async cleanup() {
+    try {
+      return await withDescriptorLock(this.file, async () => {
+        const parsed = JSON.parse(await readFile(this.file, "utf8"));
+        if (!isBridgeDescriptor(parsed))
+          return false;
+        if (parsed.serverId !== this.data.serverId || parsed.token !== this.data.token)
+          return false;
+        await unlink(this.file);
+        return true;
+      });
+    } catch {
+      return false;
+    }
+  }
+}
+
+// src/service/credentials.ts
+import { randomUUID as randomUUID2 } from "node:crypto";
+import { mkdir as mkdir2, readFile as readFile2, rename as rename2, writeFile as writeFile2 } from "node:fs/promises";
+import path2 from "node:path";
+var EMPTY = { version: 1, connections: [] };
+var isRecord2 = (value) => !!value && typeof value === "object" && !Array.isArray(value);
+var normalizeFile = (value) => {
+  if (!isRecord2(value) || !Array.isArray(value.connections))
+    return { ...EMPTY };
+  const connections = value.connections.filter((entry) => {
+    if (!isRecord2(entry))
+      return false;
+    return typeof entry.id === "string" && typeof entry.kind === "string" && typeof entry.label === "string" && typeof entry.createdAt === "string" && isRecord2(entry.secret);
+  });
+  return { version: 1, connections };
+};
+var toPublic = (entry) => {
+  const { secret: _secret, accountId: _accountId, ...connection } = entry;
+  return connection;
+};
+var slug = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "provider";
+var isNamedKind = (kind) => kind !== "custom";
+
+class CredentialStore {
+  dataDir;
+  file;
+  data = { ...EMPTY };
+  constructor(dataDir) {
+    this.dataDir = dataDir;
+    this.file = path2.join(dataDir, "connections.json");
+  }
+  async load() {
+    try {
+      this.data = normalizeFile(JSON.parse(await readFile2(this.file, "utf8")));
+    } catch {
+      this.data = { ...EMPTY };
+    }
+  }
+  async save() {
+    await mkdir2(this.dataDir, { recursive: true });
+    const temp = `${this.file}.${process.pid}.${randomUUID2()}.tmp`;
+    await writeFile2(temp, JSON.stringify(this.data, null, 2), { mode: 384 });
+    await rename2(temp, this.file);
+  }
+  list() {
+    return this.data.connections.filter((entry) => !isManagedKind(entry.kind)).map(toPublic);
+  }
+  entries() {
+    return this.data.connections.filter((entry) => !isManagedKind(entry.kind));
+  }
+  get(id) {
+    const entry = this.data.connections.find((candidate) => candidate.id === id);
+    return entry && !isManagedKind(entry.kind) ? entry : undefined;
+  }
+  async upsert(input) {
+    if (isManagedKind(input.kind)) {
+      throw new Error("This provider signs in through OpenCode and cannot store a key here.");
+    }
+    const existing = input.id ? this.get(input.id) : undefined;
+    if (isNamedKind(input.kind)) {
+      const clash = this.data.connections.find((entry) => entry.kind === input.kind && entry.id !== existing?.id);
+      if (clash)
+        throw new Error(`A ${input.kind} connection already exists.`);
+    } else {
+      const clash = this.data.connections.find((entry) => entry.kind === "custom" && entry.id !== existing?.id && entry.label.toLowerCase() === input.label.toLowerCase());
+      if (clash)
+        throw new Error("A custom provider with this label already exists.");
+    }
+    const now = new Date().toISOString();
+    const id = existing?.id ?? (isNamedKind(input.kind) ? input.kind : `custom-${slug(input.label)}${this.data.connections.some((entry) => entry.id === `custom-${slug(input.label)}`) ? `-${Date.now().toString(36)}` : ""}`);
+    const secret = {
+      ...existing?.secret.apiKey && !input.apiKey ? { apiKey: existing.secret.apiKey } : {},
+      ...input.apiKey ? { apiKey: input.apiKey } : {},
+      ...existing?.secret.accessToken && !input.accessToken ? { accessToken: existing.secret.accessToken } : {},
+      ...input.accessToken ? { accessToken: input.accessToken } : {},
+      ...input.accountId ? { accountId: input.accountId } : {}
+    };
+    if (input.kind === "codex" && !secret.accessToken && existing?.secret.accessToken) {
+      secret.accessToken = existing.secret.accessToken;
+    }
+    if (input.kind === "codex" && !secret.accountId && existing?.secret.accountId) {
+      secret.accountId = existing.secret.accountId;
+    }
+    const connection = {
+      id,
+      kind: input.kind,
+      label: input.label,
+      ...input.endpoint ? { endpoint: input.endpoint } : existing?.endpoint ? { endpoint: existing.endpoint } : {},
+      ...secret.accountId ? { accountId: secret.accountId } : {},
+      createdAt: existing?.createdAt ?? now,
+      secret
+    };
+    this.data.connections = existing ? this.data.connections.map((entry) => entry.id === id ? connection : entry) : [...this.data.connections, connection];
+    await this.save();
+    return toPublic(connection);
+  }
+  async remove(id) {
+    const before = this.data.connections.length;
+    this.data.connections = this.data.connections.filter((entry) => entry.id !== id);
+    if (this.data.connections.length === before)
+      return false;
+    await this.save();
+    return true;
+  }
+  async setTestResult(id, result) {
+    const entry = this.get(id);
+    if (!entry)
+      return;
+    entry.lastTestAt = new Date().toISOString();
+    entry.lastTestResult = result;
+    await this.save();
+  }
+}
+
+// src/service/scheduler.ts
+class Scheduler {
+  states = new Map;
+  exportState() {
+    const result = {};
+    for (const [id, state] of this.states) {
+      result[id] = {
+        lastAttempt: state.lastAttempt,
+        retryAt: state.retryAt,
+        failures: state.failures
+      };
+    }
+    return result;
+  }
+  importState(state) {
+    if (!state || typeof state !== "object")
+      return;
+    for (const [id, value] of Object.entries(state)) {
+      if (!value || typeof value !== "object")
+        continue;
+      const lastAttempt = Number(value.lastAttempt);
+      const retryAt = Number(value.retryAt);
+      const failures = Number(value.failures);
+      this.states.set(id, {
+        inFlight: false,
+        lastAttempt: Number.isFinite(lastAttempt) && lastAttempt > 0 ? lastAttempt : 0,
+        retryAt: Number.isFinite(retryAt) && retryAt > 0 ? retryAt : 0,
+        failures: Number.isFinite(failures) && failures > 0 ? Math.floor(failures) : 0
+      });
+    }
+  }
+  state(id) {
+    const current = this.states.get(id);
+    if (current)
+      return current;
+    const next = { inFlight: false, lastAttempt: 0, retryAt: 0, failures: 0 };
+    this.states.set(id, next);
+    return next;
+  }
+  isRefreshing(id) {
+    return this.state(id).inFlight;
+  }
+  waitUntil(state, minIntervalMs) {
+    const intervalAt = state.lastAttempt ? state.lastAttempt + Math.max(minIntervalMs, backoffMs(state.failures)) : 0;
+    return Math.max(intervalAt, state.retryAt);
+  }
+  nextAllowedAt(id, minIntervalMs, now) {
+    return Math.max(now, this.waitUntil(this.state(id), minIntervalMs));
+  }
+  begin(id, minIntervalMs, now, options = {}) {
+    const state = this.state(id);
+    if (state.inFlight)
+      return false;
+    const floor = options.manual && state.lastAttempt ? state.lastAttempt + Math.max(EVENT_MIN_INTERVAL_MS, backoffMs(state.failures)) : this.waitUntil(state, minIntervalMs);
+    if (now < Math.max(floor, state.retryAt))
+      return false;
+    state.inFlight = true;
+    state.lastAttempt = now;
+    return true;
+  }
+  finish(id, retryAt, failed = false) {
+    const state = this.state(id);
+    state.inFlight = false;
+    state.failures = failed ? state.failures + 1 : 0;
+    if (retryAt)
+      state.retryAt = retryAt;
+    else if (!failed)
+      state.retryAt = 0;
+  }
+  reset(id) {
+    this.states.delete(id);
+  }
+}
+
+// src/service/settings.ts
+import { randomUUID as randomUUID3 } from "node:crypto";
+import { mkdir as mkdir3, readFile as readFile3, rename as rename3, writeFile as writeFile3 } from "node:fs/promises";
+import path3 from "node:path";
+
+// src/core/types.ts
+var PROVIDER_KINDS = [
+  "custom",
+  "codex",
+  "exa",
+  "opencode-go",
+  "openrouter",
+  "tavily",
+  "opencode-zen"
+];
+var DEFAULT_SELECTION = {
+  saved: false,
+  providers: [],
+  providerOrder: [],
+  windows: {},
+  collapsedProviders: [],
+  collapsedQuota: {},
+  hiddenBalances: [],
+  cutoffPercent: 10,
+  resetTime: "relative",
+  quotaDisplay: "remaining",
+  encounteredBridgeProviders: [],
+  initializedBridgeWindows: [],
+  explicitProviderSelections: [],
+  explicitWindowSelections: []
+};
+
+// src/core/selection.ts
+var isRecord3 = (value) => !!value && typeof value === "object" && !Array.isArray(value);
+var stringList = (value) => Array.isArray(value) ? [...new Set(value.filter((entry) => typeof entry === "string" && entry.length > 0))] : [];
+var normalizeSelection = (value) => {
+  if (!isRecord3(value))
+    return structuredClone(DEFAULT_SELECTION);
+  const providers = stringList(value.providers);
+  const windows = {};
+  if (isRecord3(value.windows)) {
+    for (const [id, list] of Object.entries(value.windows)) {
+      if (Array.isArray(list))
+        windows[id] = stringList(list);
+    }
+  }
+  const collapsedQuota = {};
+  if (isRecord3(value.collapsedQuota)) {
+    for (const [id, mode] of Object.entries(value.collapsedQuota)) {
+      if (typeof mode === "string" && mode.length > 0)
+        collapsedQuota[id] = mode;
+    }
+  }
+  const cutoff = typeof value.cutoffPercent === "number" && Number.isFinite(value.cutoffPercent) ? Math.min(100, Math.max(0, value.cutoffPercent)) : DEFAULT_SELECTION.cutoffPercent;
+  return {
+    saved: value.saved === true,
+    providers,
+    providerOrder: stringList(value.providerOrder),
+    windows,
+    collapsedProviders: stringList(value.collapsedProviders),
+    collapsedQuota,
+    hiddenBalances: stringList(value.hiddenBalances),
+    cutoffPercent: cutoff,
+    resetTime: value.resetTime === "absolute" ? "absolute" : "relative",
+    quotaDisplay: value.quotaDisplay === "used" ? "used" : "remaining",
+    encounteredBridgeProviders: stringList(value.encounteredBridgeProviders),
+    initializedBridgeWindows: stringList(value.initializedBridgeWindows),
+    explicitProviderSelections: stringList(value.explicitProviderSelections),
+    explicitWindowSelections: stringList(value.explicitWindowSelections)
+  };
+};
+var addUnique = (list, value) => list.includes(value) ? list : [...list, value];
+var reconcileFirstSuccess = (selection, providers) => {
+  const next = {
+    ...selection,
+    providers: [...selection.providers],
+    windows: { ...selection.windows },
+    encounteredBridgeProviders: [...selection.encounteredBridgeProviders],
+    initializedBridgeWindows: [...selection.initializedBridgeWindows],
+    explicitProviderSelections: [...selection.explicitProviderSelections],
+    explicitWindowSelections: [...selection.explicitWindowSelections]
+  };
+  let changed = false;
+  for (const row of BRIDGE_PROVIDERS) {
+    const provider = providers.find((entry) => entry.connectionId === row.connectionId);
+    if (!provider)
+      continue;
+    if (!next.encounteredBridgeProviders.includes(row.connectionId)) {
+      next.encounteredBridgeProviders = addUnique(next.encounteredBridgeProviders, row.connectionId);
+      const explicitlyHidden = next.explicitProviderSelections.includes(row.connectionId) && !next.providers.includes(row.connectionId);
+      if (!explicitlyHidden && !next.providers.includes(row.connectionId)) {
+        next.providers = addUnique(next.providers, row.connectionId);
+      }
+      changed = true;
+    }
+    if (provider.state !== "ok" || provider.windows.length === 0)
+      continue;
+    const usable = provider.windows.some((window) => !window.error && typeof window.remainingPercent === "number");
+    if (!usable)
+      continue;
+    if (next.initializedBridgeWindows.includes(row.connectionId))
+      continue;
+    if (!next.explicitWindowSelections.includes(row.connectionId)) {
+      next.windows[row.connectionId] = provider.windows.map((window) => window.id);
+    }
+    next.initializedBridgeWindows = addUnique(next.initializedBridgeWindows, row.connectionId);
+    changed = true;
+  }
+  return changed ? next : selection;
+};
+var markExplicitProvider = (selection, providerId) => ({ ...selection, explicitProviderSelections: addUnique(selection.explicitProviderSelections, providerId) });
+var markExplicitWindow = (selection, providerId) => ({ ...selection, explicitWindowSelections: addUnique(selection.explicitWindowSelections, providerId) });
+
+// src/service/settings.ts
+var isRecord4 = (value) => !!value && typeof value === "object" && !Array.isArray(value);
+var ALLOWED_FIELDS = new Set([
+  "saved",
+  "providers",
+  "providerVisibility",
+  "providerOrder",
+  "windows",
+  "windowSelection",
+  "collapsedProviders",
+  "collapsedQuota",
+  "hiddenBalances",
+  "cutoffPercent",
+  "resetTime",
+  "quotaDisplay"
+]);
+var TRACKING_FIELDS = new Set([
+  "encounteredBridgeProviders",
+  "initializedBridgeWindows",
+  "explicitProviderSelections",
+  "explicitWindowSelections"
+]);
+var stringList2 = (value) => {
+  if (!Array.isArray(value))
+    return null;
+  if (!value.every((entry) => typeof entry === "string" && entry.length >= 1 && entry.length <= 80)) {
+    return null;
+  }
+  return [...new Set(value)];
+};
+var validSelectionId = (id) => id.length > 0 && id.length <= 80;
+
+class SettingsService {
+  dataDir;
+  file;
+  data = {
+    version: 1,
+    revision: 0,
+    selection: structuredClone(DEFAULT_SELECTION)
+  };
+  writeChain = Promise.resolve();
+  constructor(dataDir) {
+    this.dataDir = dataDir;
+    this.file = path3.join(dataDir, "display.json");
+  }
+  async load() {
+    try {
+      const parsed = JSON.parse(await readFile3(this.file, "utf8"));
+      if (!isRecord4(parsed))
+        return;
+      const revision = typeof parsed.revision === "number" && Number.isInteger(parsed.revision) && parsed.revision >= 0 ? parsed.revision : 0;
+      this.data = {
+        version: 1,
+        revision,
+        selection: normalizeSelection(parsed.selection)
+      };
+    } catch {}
+  }
+  get() {
+    return structuredClone(this.data);
+  }
+  async patch(input) {
+    if (!isRecord4(input))
+      return { status: 400, message: "Body must be a JSON object." };
+    const expectedRevision = input.expectedRevision;
+    if (typeof expectedRevision !== "number" || !Number.isInteger(expectedRevision) || expectedRevision < 0) {
+      return { status: 400, message: "expectedRevision must be a nonnegative integer." };
+    }
+    if (!isRecord4(input.changes) || Object.keys(input.changes).length === 0) {
+      return { status: 400, message: "changes must be a nonempty object." };
+    }
+    if (expectedRevision !== this.data.revision) {
+      return { status: 409, envelope: this.get() };
+    }
+    const changes = input.changes;
+    for (const key of Object.keys(changes)) {
+      if (TRACKING_FIELDS.has(key)) {
+        return { status: 400, message: "Selection tracking is maintained by the service." };
+      }
+      if (!ALLOWED_FIELDS.has(key)) {
+        return { status: 400, message: `Unknown field: ${key}.` };
+      }
+    }
+    const next = structuredClone(this.data.selection);
+    if (changes.saved !== undefined) {
+      if (typeof changes.saved !== "boolean")
+        return { status: 400, message: "saved must be a boolean." };
+      next.saved = changes.saved;
+    }
+    if (changes.providers !== undefined) {
+      const providers = stringList2(changes.providers);
+      if (!providers)
+        return { status: 400, message: "providers must be unique ids." };
+      next.providers = providers;
+      next.saved = true;
+      const previouslyVisible = this.data.selection.saved ? this.data.selection.providers.filter(isBridgeConnectionId) : BRIDGE_PROVIDERS.map((row) => row.connectionId);
+      const touched = new Set([...previouslyVisible, ...providers.filter(isBridgeConnectionId)]);
+      for (const id of touched) {
+        next.explicitProviderSelections = markExplicitProvider(next, id).explicitProviderSelections;
+      }
+    }
+    if (changes.providerVisibility !== undefined) {
+      if (!isRecord4(changes.providerVisibility)) {
+        return { status: 400, message: "providerVisibility must be an object." };
+      }
+      const providers = new Set(next.providers);
+      for (const [id, visible] of Object.entries(changes.providerVisibility)) {
+        if (!validSelectionId(id) || typeof visible !== "boolean") {
+          return { status: 400, message: "Each provider visibility edit needs an id and boolean." };
+        }
+        if (visible)
+          providers.add(id);
+        else
+          providers.delete(id);
+        next.explicitProviderSelections = markExplicitProvider(next, id).explicitProviderSelections;
+      }
+      next.providers = [...providers];
+    }
+    for (const field of ["windows", "windowSelection"]) {
+      if (changes[field] === undefined)
+        continue;
+      const selections = changes[field];
+      if (!isRecord4(selections))
+        return { status: 400, message: `${field} must be an object.` };
+      for (const [id, list] of Object.entries(selections)) {
+        const windows = stringList2(list);
+        if (!validSelectionId(id) || !windows) {
+          return { status: 400, message: "Each window selection needs a provider id and window ids." };
+        }
+        next.windows = { ...next.windows, [id]: windows };
+        next.explicitWindowSelections = markExplicitWindow(next, id).explicitWindowSelections;
+      }
+      if (field === "windows")
+        next.saved = true;
+    }
+    if (changes.providerOrder !== undefined) {
+      const order = stringList2(changes.providerOrder);
+      if (!order)
+        return { status: 400, message: "providerOrder must contain unique ids." };
+      next.providerOrder = order;
+    }
+    if (changes.collapsedProviders !== undefined) {
+      if (!isRecord4(changes.collapsedProviders)) {
+        return { status: 400, message: "collapsedProviders must be an object." };
+      }
+      const collapsed = new Set(next.collapsedProviders);
+      for (const [id, value] of Object.entries(changes.collapsedProviders)) {
+        if (id.length === 0 || id.length > 80 || typeof value !== "boolean") {
+          return { status: 400, message: "Each collapsed provider must have a valid id and boolean state." };
+        }
+        if (value)
+          collapsed.add(id);
+        else
+          collapsed.delete(id);
+      }
+      next.collapsedProviders = [...collapsed];
+    }
+    if (changes.collapsedQuota !== undefined) {
+      if (!isRecord4(changes.collapsedQuota)) {
+        return { status: 400, message: "collapsedQuota must be an object." };
+      }
+      next.collapsedQuota = { ...next.collapsedQuota };
+      for (const [providerId, mode] of Object.entries(changes.collapsedQuota)) {
+        if (typeof mode !== "string" || mode.length === 0 || mode.length > 80 && !/^(?:window|cap|balance):[\s\S]{1,80}$/u.test(mode)) {
+          return { status: 400, message: "Each collapsed quota mode must be a short string." };
+        }
+        next.collapsedQuota[providerId] = mode;
+      }
+    }
+    if (changes.hiddenBalances !== undefined) {
+      const hidden = stringList2(changes.hiddenBalances);
+      if (!hidden)
+        return { status: 400, message: "hiddenBalances must contain unique ids." };
+      next.hiddenBalances = hidden;
+    }
+    if (changes.cutoffPercent !== undefined) {
+      if (typeof changes.cutoffPercent !== "number" || !Number.isFinite(changes.cutoffPercent) || changes.cutoffPercent < 0 || changes.cutoffPercent > 100) {
+        return { status: 400, message: "cutoffPercent must be between 0 and 100." };
+      }
+      next.cutoffPercent = changes.cutoffPercent;
+    }
+    if (changes.resetTime !== undefined) {
+      if (changes.resetTime !== "relative" && changes.resetTime !== "absolute") {
+        return { status: 400, message: "resetTime must be relative or absolute." };
+      }
+      next.resetTime = changes.resetTime;
+    }
+    if (changes.quotaDisplay !== undefined) {
+      if (changes.quotaDisplay !== "remaining" && changes.quotaDisplay !== "used") {
+        return { status: 400, message: "quotaDisplay must be remaining or used." };
+      }
+      next.quotaDisplay = changes.quotaDisplay;
+    }
+    this.data = { version: 1, revision: this.data.revision + 1, selection: next };
+    await this.save();
+    return { status: 200, envelope: this.get() };
+  }
+  async reconcile(providers) {
+    const next = reconcileFirstSuccess(this.data.selection, providers);
+    if (next === this.data.selection)
+      return false;
+    this.data = { version: 1, revision: this.data.revision + 1, selection: next };
+    await this.save();
+    return true;
+  }
+  save() {
+    const write = async () => {
+      await mkdir3(this.dataDir, { recursive: true });
+      const temp = `${this.file}.${process.pid}.${randomUUID3()}.tmp`;
+      await writeFile3(temp, JSON.stringify(this.data, null, 2), { mode: 384 });
+      await rename3(temp, this.file);
+    };
+    this.writeChain = this.writeChain.then(write, write);
+    return this.writeChain;
+  }
+}
+
+// src/service/snapshot.ts
+import { randomUUID as randomUUID4 } from "node:crypto";
+import { mkdir as mkdir4, readFile as readFile4, rename as rename4, writeFile as writeFile4 } from "node:fs/promises";
+import path4 from "node:path";
+
+// src/core/http-error.ts
+class HttpError extends Error {
+  code;
+  status;
+  retryAt;
+  constructor(code, message, status, retryAt) {
+    super(message);
+    this.name = "HttpError";
+    this.code = code;
+    this.status = status;
+    this.retryAt = retryAt;
+  }
+}
+var parseRetryAt = (value, now) => {
+  if (!value)
+    return;
+  const raw = Array.isArray(value) ? value[0] : value;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds))
+    return new Date(now + seconds * 1000).toISOString();
+  const date = Date.parse(raw);
+  return Number.isFinite(date) ? new Date(date).toISOString() : undefined;
+};
+var effectiveTimeout = (options, now, fallbackMs = 1e4) => {
+  const own = options.timeoutMs ?? fallbackMs;
+  if (options.deadlineAt === undefined)
+    return own;
+  return Math.max(0, Math.min(own, options.deadlineAt - now));
+};
+
+// src/providers/parse.ts
+var asRecord = (value) => value && typeof value === "object" && !Array.isArray(value) ? value : null;
+var asNumber = (value) => {
+  const number = typeof value === "string" ? Number(value) : value;
+  return typeof number === "number" && Number.isFinite(number) ? number : null;
+};
+var asString = (value) => typeof value === "string" && value.trim() ? value.trim() : null;
+var asArray = (value) => Array.isArray(value) ? value : [];
+function bad(message) {
+  throw new HttpError("bad_response", message);
+}
+var toIso = (value) => {
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const ms = value > 10000000000 ? value : value * 1000;
+    return new Date(ms).toISOString();
+  }
+  return null;
+};
+
+// src/providers/custom.ts
+var MAX_ITEMS = 20;
+var endpointOf = (connection) => {
+  if (!connection.endpoint)
+    bad("The custom provider has no endpoint.");
+  const parsed = (() => {
+    try {
+      return new URL(connection.endpoint);
+    } catch {
+      return null;
+    }
+  })();
+  if (!parsed)
+    bad("The custom endpoint is not a valid URL.");
+  if (parsed.protocol !== "https:")
+    bad("The custom endpoint must use HTTPS.");
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+    bad("The custom endpoint must not contain credentials, a query, or a fragment.");
+  }
+  return parsed;
+};
+var parseWindow = (value) => {
+  const entry = asRecord(value);
+  if (!entry)
+    bad("A custom window is not an object.");
+  const id = asString(entry.id);
+  const label = asString(entry.label);
+  const remaining = asNumber(entry.remainingPercent);
+  const resetAt = asString(entry.resetAt);
+  const duration = asNumber(entry.durationSeconds);
+  if (!id || !label)
+    bad("A custom window needs an id and label.");
+  if (remaining === null || remaining < 0 || remaining > 100)
+    bad("remainingPercent must be 0–100.");
+  if (!resetAt || !Number.isFinite(Date.parse(resetAt)))
+    bad("A custom window needs a valid resetAt.");
+  if (duration !== null && duration <= 0)
+    bad("durationSeconds must be positive.");
+  const window = {
+    id,
+    label,
+    remainingPercent: remaining,
+    resetAt: new Date(resetAt).toISOString()
+  };
+  if (duration !== null)
+    window.durationSeconds = duration;
+  return window;
+};
+var parseCap = (value) => {
+  const entry = asRecord(value);
+  if (!entry)
+    bad("A custom cap is not an object.");
+  const id = asString(entry.id);
+  const label = asString(entry.label);
+  const used = asNumber(entry.used);
+  const limit = asNumber(entry.limit);
+  const unit = asString(entry.unit);
+  if (!id || !label || !unit)
+    bad("A custom cap needs id, label, and unit.");
+  if (used === null || used < 0)
+    bad("A custom cap needs used >= 0.");
+  if (limit === null || limit <= 0)
+    bad("A custom cap needs limit > 0.");
+  return { id, label, used, limit, unit };
+};
+var parseBalance = (value) => {
+  const entry = asRecord(value);
+  if (!entry)
+    bad("A custom balance is not an object.");
+  const id = asString(entry.id);
+  const label = asString(entry.label);
+  const amount = asNumber(entry.value);
+  const unit = asString(entry.unit);
+  if (!id || !label || !unit)
+    bad("A custom balance needs id, label, and unit.");
+  if (amount === null)
+    bad("A custom balance needs a numeric value.");
+  return { id, label, value: amount, unit };
+};
+var parsePayload = (value) => {
+  const payload = asRecord(value);
+  if (!payload || payload.version !== 1)
+    bad("The custom provider must return openchamber-quota-v1.");
+  const windows = asArray(payload.windows);
+  const caps = asArray(payload.caps);
+  const balances = asArray(payload.balances);
+  if (windows.length > MAX_ITEMS || caps.length > MAX_ITEMS || balances.length > MAX_ITEMS) {
+    bad("The custom provider returned too many items.");
+  }
+  if (!windows.length && !caps.length && !balances.length) {
+    bad("The custom provider returned no windows, caps, or balances.");
+  }
+  return {
+    windows: windows.map(parseWindow),
+    caps: caps.map(parseCap),
+    balances: balances.map(parseBalance)
+  };
+};
+var customAdapter = {
+  kind: "custom",
+  minIntervalMs: PROVIDER_MIN_INTERVAL_MS,
+  fetch: async (connection, context) => {
+    const endpoint = endpointOf(connection);
+    const apiKey = connection.secret.apiKey;
+    if (!apiKey)
+      throw new HttpError("not_configured", "The custom provider has no key.");
+    const response = await context.requestJson(endpoint.toString(), {
+      headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
+      timeoutMs: 1e4,
+      deadlineAt: context.deadlineAt,
+      signal: context.signal,
+      maxBytes: 65536
+    });
+    if (response.contentType && !response.contentType.toLowerCase().includes("application/json")) {
+      bad("The custom provider must return application/json.");
+    }
+    return parsePayload(response.body);
+  }
+};
+
+// src/providers/codex.ts
+var labelFor = (seconds) => {
+  if (!seconds)
+    return "Limit";
+  if (seconds <= 6 * 3600)
+    return "5h";
+  if (seconds <= 8 * 86400)
+    return "7d";
+  if (seconds <= 32 * 86400)
+    return "30d";
+  return `${Math.round(seconds / 86400)}d`;
+};
+var resetAtFor = (entry, now) => {
+  const direct = toIso(entry.reset_at);
+  if (direct)
+    return direct;
+  const after = asNumber(entry.reset_after_seconds);
+  return after !== null && after > 0 ? new Date(now + after * 1000).toISOString() : null;
+};
+var parseWindow2 = (value, index, now) => {
+  const entry = asRecord(value);
+  if (!entry)
+    return null;
+  const used = asNumber(entry.used_percent);
+  const resetAt = resetAtFor(entry, now);
+  const seconds = asNumber(entry.limit_window_seconds);
+  const window = {
+    id: `window-${index}`,
+    label: labelFor(seconds)
+  };
+  if (used === null || !resetAt) {
+    window.error = {
+      code: "bad_response",
+      message: used === null ? "Usage unavailable." : "Reset time unavailable."
+    };
+    return window;
+  }
+  window.remainingPercent = Math.min(100, Math.max(0, 100 - used));
+  window.resetAt = resetAt;
+  if (seconds !== null && seconds > 0)
+    window.durationSeconds = seconds;
+  return window;
+};
+var codexAdapter = {
+  kind: "codex",
+  minIntervalMs: PROVIDER_MIN_INTERVAL_MS,
+  fetch: async (connection, context) => {
+    const accessToken = connection.secret.accessToken;
+    const accountId = connection.secret.accountId;
+    if (!accessToken) {
+      throw new HttpError("not_configured", "Sign in to OpenAI in OpenCode. API keys cannot read ChatGPT quota.");
+    }
+    if (!accountId) {
+      throw new HttpError("not_configured", "OpenAI needs an account id. Sign in to OpenAI in OpenCode, then refresh.");
+    }
+    const headers = {
+      Accept: "application/json",
+      Authorization: `Bearer ${accessToken}`,
+      "ChatGPT-Account-Id": accountId,
+      "User-Agent": "OpenChamber quota display"
+    };
+    const response = await context.requestJson("https://chatgpt.com/backend-api/wham/usage", {
+      headers,
+      timeoutMs: 1e4,
+      deadlineAt: context.deadlineAt,
+      signal: context.signal
+    }).catch((error) => {
+      if (error instanceof HttpError && error.code === "auth") {
+        throw new HttpError("auth", "OpenAI rejected the sign-in. Sign in again in OpenCode, then refresh.");
+      }
+      throw error;
+    });
+    const body = asRecord(response.body) ?? {};
+    const rateLimit = asRecord(body.rate_limit) ?? {};
+    const now = context.now();
+    const windows = [];
+    for (const [index, key] of ["primary_window", "secondary_window"].entries()) {
+      const window = parseWindow2(rateLimit[key], index, now);
+      if (window)
+        windows.push(window);
+    }
+    const monthlySeconds = 2628000;
+    const spend = asRecord(body.spend_control);
+    const individualLimit = asRecord(spend?.individual_limit);
+    const remaining = asNumber(individualLimit?.remaining_percent);
+    const spendReset = individualLimit ? resetAtFor(individualLimit, now) : null;
+    if (!windows.some((window) => window.durationSeconds === monthlySeconds) && remaining !== null && spendReset) {
+      windows.push({
+        id: "spend-monthly",
+        label: "30d",
+        remainingPercent: Math.min(100, Math.max(0, remaining)),
+        resetAt: spendReset,
+        durationSeconds: monthlySeconds
+      });
+    }
+    const balances = [];
+    const credits = asRecord(body.credits);
+    const balance = asNumber(credits?.balance);
+    if (credits?.has_credits === true && balance !== null) {
+      balances.push({ id: "credits", label: "Credits", value: balance, unit: "credits" });
+    }
+    if (!windows.length && !balances.length) {
+      throw new HttpError("bad_response", "Codex returned no usable quota data.");
+    }
+    return { windows, caps: [], balances };
+  }
+};
+
+// src/providers/exa.ts
+var exaAdapter = {
+  kind: "exa",
+  minIntervalMs: PROVIDER_MIN_INTERVAL_MS,
+  fetch: async (connection, context) => {
+    const apiKey = connection.secret.apiKey;
+    if (!apiKey)
+      throw new HttpError("not_configured", "Sign in to Exa in OpenCode.");
+    const response = await context.requestJson("https://admin-api.exa.ai/team-management/credits", {
+      headers: {
+        Accept: "application/json",
+        "x-api-key": apiKey,
+        "User-Agent": "OpenChamber quota display"
+      },
+      timeoutMs: 1e4,
+      deadlineAt: context.deadlineAt,
+      signal: context.signal
+    }).catch((error) => {
+      if (error instanceof HttpError && error.code === "auth") {
+        throw new HttpError("auth", "Exa needs a Team Management service key in OpenCode to read credits.");
+      }
+      throw error;
+    });
+    const body = asRecord(response.body) ?? {};
+    const credits = asNumber(body.credits_usd);
+    if (credits === null) {
+      throw new HttpError("bad_response", "Exa returned no credit balance.");
+    }
+    const balances = [
+      { id: "credits", label: "Credits", value: credits, unit: "USD" }
+    ];
+    const expiring = asArray(body.expiring_credits);
+    expiring.forEach((entry, index) => {
+      const record = asRecord(entry);
+      const amount = asNumber(record?.amount_usd);
+      if (amount === null || amount <= 0)
+        return;
+      balances.push({
+        id: `expiring-${index}`,
+        label: "Expiring credits",
+        value: amount,
+        unit: "USD"
+      });
+    });
+    return { windows: [], caps: [], balances };
+  }
+};
+
+// src/providers/opencode-go.ts
+var FIELDS = [
+  { key: "rolling", consoleKey: "fiveHour", label: "5h", seconds: 5 * 3600 },
+  { key: "weekly", consoleKey: "week", label: "7d", seconds: 7 * 86400 },
+  { key: "monthly", consoleKey: "month", label: "30d", seconds: 30 * 86400 }
+];
+var CONSOLE_PRODUCTS = new Set(["go", "go-plus", "go-teams"]);
+var remainingPercent = (usedPercent) => Math.min(100, Math.max(0, 100 - usedPercent));
+var parseConsoleWindows = (payload) => {
+  const body = asRecord(payload);
+  if (typeof body?.product !== "string" || !CONSOLE_PRODUCTS.has(body.product))
+    return [];
+  const meters = asRecord(asRecord(body.access)?.meters);
+  const windows = [];
+  for (const field of FIELDS) {
+    const entry = asRecord(meters?.[field.consoleKey]);
+    const used = asNumber(entry?.usedMicroCents);
+    const limit = asNumber(entry?.limitMicroCents);
+    const resetAt = toIso(entry?.resetsAt);
+    if (used === null || used < 0 || limit === null || limit <= 0 || !resetAt)
+      continue;
+    windows.push({
+      id: field.key,
+      label: field.label,
+      remainingPercent: remainingPercent(used / limit * 100),
+      resetAt,
+      durationSeconds: field.seconds
+    });
+  }
+  return windows;
+};
+var openCodeGoAdapter = {
+  kind: "opencode-go",
+  minIntervalMs: PROVIDER_MIN_INTERVAL_MS,
+  fetch: async (connection, context) => {
+    const token = connection.secret.apiKey ?? connection.secret.accessToken;
+    if (!token)
+      throw new HttpError("not_configured", "Sign in to OpenCode Go in OpenCode.");
+    const requestOptions = {
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+        "x-opencode-session": "openchamber-quota",
+        "User-Agent": "OpenChamber quota display"
+      },
+      timeoutMs: 1e4,
+      deadlineAt: context.deadlineAt,
+      signal: context.signal
+    };
+    let consoleWindows = [];
+    try {
+      const status = await context.requestJson("https://opencode.ai/console/api/go/status", requestOptions);
+      consoleWindows = parseConsoleWindows(status.body);
+    } catch (error) {
+      if (error instanceof HttpError && error.code === "rate_limited")
+        throw error;
+    }
+    if (consoleWindows.length === FIELDS.length) {
+      return { windows: consoleWindows, caps: [], balances: [] };
+    }
+    let usage = null;
+    try {
+      const response = await context.requestJson("https://opencode.ai/zen/go/v1/usage", requestOptions);
+      usage = asRecord(asRecord(response.body)?.usage);
+    } catch (error) {
+      if (!consoleWindows.length || error instanceof HttpError && error.code === "rate_limited") {
+        throw error;
+      }
+    }
+    const windows = [];
+    for (const field of FIELDS) {
+      const consoleWindow = consoleWindows.find((window) => window.id === field.key);
+      if (consoleWindow) {
+        windows.push(consoleWindow);
+        continue;
+      }
+      const entry = asRecord(usage?.[field.key]);
+      if (!entry)
+        continue;
+      const used = asNumber(entry.percent);
+      const resetAt = toIso(entry.resetsAt);
+      if (used === null || !resetAt) {
+        windows.push({
+          id: field.key,
+          label: field.label,
+          error: {
+            code: "bad_response",
+            message: used === null ? "Usage unavailable." : "Reset time unavailable."
+          }
+        });
+        continue;
+      }
+      windows.push({
+        id: field.key,
+        label: field.label,
+        remainingPercent: remainingPercent(used),
+        resetAt,
+        durationSeconds: field.seconds
+      });
+    }
+    if (!windows.length)
+      throw new HttpError("bad_response", "OpenCode Go returned no usable windows.");
+    return { windows, caps: [], balances: [] };
+  }
+};
+
+// src/providers/opencode-zen.ts
+var MICRO_CENTS_PER_DOLLAR = 1e8;
+var usd = (microCents) => microCents / MICRO_CENTS_PER_DOLLAR;
+var openCodeZenAdapter = {
+  kind: "opencode-zen",
+  minIntervalMs: PROVIDER_MIN_INTERVAL_MS,
+  fetch: async (connection, context) => {
+    const token = connection.secret.apiKey ?? connection.secret.accessToken;
+    if (!token)
+      throw new HttpError("not_configured", "Sign in to OpenCode Zen in OpenCode.");
+    const headers = {
+      Accept: "application/json",
+      Authorization: `Bearer ${token}`,
+      "x-opencode-session": "openchamber-quota",
+      "User-Agent": "OpenChamber quota display"
+    };
+    const orgId = connection.secret.accountId;
+    if (orgId)
+      headers["x-org-id"] = orgId;
+    const requestOptions = {
+      headers,
+      timeoutMs: 1e4,
+      deadlineAt: context.deadlineAt,
+      signal: context.signal
+    };
+    const usage = await context.requestJson("https://opencode.ai/console/api/usage/models?range=30d&page=1&pageSize=50", requestOptions);
+    const usageBody = asRecord(usage.body) ?? {};
+    const requests = asNumber(usageBody.requests);
+    const balances = requests !== null && requests >= 0 ? [{ id: "requests", label: "Requests (30d)", value: requests, unit: "requests" }] : [];
+    let caps = [];
+    try {
+      const budgets = await context.requestJson("https://opencode.ai/console/api/budgets/service-accounts/status", requestOptions);
+      const rows = asArray(budgets.body);
+      caps = rows.flatMap((row, index) => {
+        const entry = asRecord(row);
+        if (!entry)
+          return [];
+        const spent = asNumber(entry.spentMicroCents);
+        const limit = asNumber(entry.limitMicroCents);
+        if (spent === null || limit === null || limit <= 0)
+          return [];
+        const name = (asString(entry.name) ?? `Budget ${index + 1}`).slice(0, 40);
+        return [{ id: `budget-${index}`, label: name, used: usd(spent), limit: usd(limit), unit: "USD" }];
+      });
+    } catch (error) {
+      if (error instanceof HttpError && error.code === "rate_limited")
+        throw error;
+      if (balances.length === 0)
+        throw error;
+    }
+    if (balances.length === 0 && caps.length === 0) {
+      throw new HttpError("bad_response", "OpenCode Zen returned no usable quota data.");
+    }
+    return { windows: [], caps, balances };
+  }
+};
+
+// src/providers/openrouter.ts
+var PERIOD_SECONDS = {
+  daily: 86400,
+  weekly: 604800
+};
+var calendarPeriod = (period, now) => {
+  if (period === "daily") {
+    const date = new Date(now);
+    const next = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1);
+    return { resetAt: new Date(next).toISOString(), seconds: PERIOD_SECONDS.daily };
+  }
+  if (period === "weekly") {
+    const date = new Date(now);
+    const day = date.getUTCDay();
+    const next = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + ((8 - day) % 7 || 7));
+    return { resetAt: new Date(next).toISOString(), seconds: PERIOD_SECONDS.weekly };
+  }
+  if (period === "monthly") {
+    const date = new Date(now);
+    const first = Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1);
+    const previous = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1);
+    return {
+      resetAt: new Date(first).toISOString(),
+      seconds: Math.round((first - previous) / 1000)
+    };
+  }
+  return null;
+};
+var openRouterAdapter = {
+  kind: "openrouter",
+  minIntervalMs: PROVIDER_MIN_INTERVAL_MS,
+  fetch: async (connection, context) => {
+    const token = connection.secret.apiKey ?? connection.secret.accessToken;
+    if (!token)
+      throw new HttpError("not_configured", "OpenRouter has no API key.");
+    const response = await context.requestJson("https://openrouter.ai/api/v1/key", {
+      headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+      timeoutMs: 1e4,
+      deadlineAt: context.deadlineAt,
+      signal: context.signal
+    });
+    const body = asRecord(response.body) ?? {};
+    const data = asRecord(body.data) ?? body;
+    const limit = asNumber(data.limit);
+    const remaining = asNumber(data.limit_remaining);
+    const usageMonthly = asNumber(data.usage_monthly);
+    const resetPeriod = asString(data.limit_reset);
+    if (limit !== null && limit > 0) {
+      const period = resetPeriod ? calendarPeriod(resetPeriod, context.now()) : null;
+      const label = resetPeriod === "daily" ? "1d" : resetPeriod === "weekly" ? "7d" : "30d";
+      if (period) {
+        if (remaining === null) {
+          return {
+            windows: [
+              {
+                id: "limit",
+                label,
+                resetAt: period.resetAt,
+                durationSeconds: period.seconds,
+                error: { code: "bad_response", message: "Remaining limit unavailable." }
+              }
+            ],
+            caps: [],
+            balances: []
+          };
+        }
+        return {
+          windows: [
+            {
+              id: "limit",
+              label,
+              remainingPercent: Math.min(100, Math.max(0, remaining / limit * 100)),
+              resetAt: period.resetAt,
+              durationSeconds: period.seconds
+            }
+          ],
+          caps: [],
+          balances: []
+        };
+      }
+      if (remaining !== null) {
+        return {
+          windows: [],
+          caps: [
+            {
+              id: "limit",
+              label: "Key limit",
+              used: Math.max(0, limit - remaining),
+              limit,
+              unit: "USD"
+            }
+          ],
+          balances: []
+        };
+      }
+    }
+    const balances = [];
+    if (usageMonthly !== null) {
+      balances.push({ id: "monthly-spend", label: "Monthly spend", value: usageMonthly, unit: "USD" });
+    }
+    return { windows: [], caps: [], balances };
+  }
+};
+
+// src/providers/tavily.ts
+var monthPeriod = (now) => {
+  const date = new Date(now);
+  const first = Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1);
+  const previous = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1);
+  return {
+    resetAt: new Date(first).toISOString(),
+    seconds: Math.round((first - previous) / 1000)
+  };
+};
+var monthlyWindow = (id, label, used, limit, unit, now) => {
+  const period = monthPeriod(now);
+  return {
+    id,
+    label,
+    remainingPercent: Math.min(100, Math.max(0, (limit - used) / limit * 100)),
+    resetAt: period.resetAt,
+    durationSeconds: period.seconds,
+    used: { value: used, unit },
+    limit: { value: limit, unit }
+  };
+};
+var tavilyAdapter = {
+  kind: "tavily",
+  minIntervalMs: PROVIDER_MIN_INTERVAL_MS,
+  fetch: async (connection, context) => {
+    const apiKey = connection.secret.apiKey;
+    if (!apiKey)
+      throw new HttpError("not_configured", "Tavily has no API key.");
+    const response = await context.requestJson("https://api.tavily.com/usage", {
+      headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
+      timeoutMs: 1e4,
+      deadlineAt: context.deadlineAt,
+      signal: context.signal
+    });
+    const body = asRecord(response.body) ?? {};
+    const key = asRecord(body.key) ?? {};
+    const account = asRecord(body.account) ?? {};
+    const windows = [];
+    const balances = [];
+    const now = context.now();
+    const planLimit = asNumber(account.plan_limit);
+    const planUsage = asNumber(account.plan_usage);
+    if (planLimit !== null && planLimit > 0 && planUsage !== null && planUsage >= 0) {
+      windows.push(monthlyWindow("plan", "Credits", planUsage, planLimit, "credits", now));
+    }
+    const keyLimit = asNumber(key.limit);
+    const keyUsage = asNumber(key.usage);
+    if (keyLimit !== null && keyLimit > 0 && keyUsage !== null && keyUsage >= 0) {
+      windows.push(monthlyWindow("key", "Key", keyUsage, keyLimit, "credits", now));
+    }
+    const paygoLimit = asNumber(account.paygo_limit);
+    const paygoUsage = asNumber(account.paygo_usage);
+    if (paygoLimit !== null && paygoLimit > 0 && paygoUsage !== null && paygoUsage >= 0) {
+      windows.push(monthlyWindow("paygo", "PAYG", paygoUsage, paygoLimit, "units", now));
+    } else if (paygoUsage !== null) {
+      balances.push({ id: "paygo-used", label: "Pay-as-you-go used", value: paygoUsage, unit: "units" });
+    }
+    return { windows, caps: [], balances };
+  }
+};
+
+// src/providers/index.ts
+var ADAPTERS = {
+  custom: customAdapter,
+  codex: codexAdapter,
+  exa: exaAdapter,
+  "opencode-go": openCodeGoAdapter,
+  "opencode-zen": openCodeZenAdapter,
+  openrouter: openRouterAdapter,
+  tavily: tavilyAdapter
+};
+
+// src/providers/validate.ts
+var MAX_ID = 80;
+var MAX_LABEL = 40;
+var MAX_UNIT = 16;
+var text = (value, max) => typeof value === "string" && value.length >= 1 && value.length <= max;
+var amount = (value) => value === undefined || Number.isFinite(value.value) && text(value.unit, MAX_UNIT);
+var error = (value) => text(value.message, 200) && ["not_configured", "auth", "rate_limited", "timeout", "network", "bad_response", "provider_error"].includes(value.code) && (value.retryAt === undefined || Number.isFinite(Date.parse(value.retryAt)));
+var window = (value) => {
+  if (!text(value.id, MAX_ID) || !text(value.label, MAX_LABEL))
+    return false;
+  if (value.error !== undefined)
+    return error(value.error);
+  if (typeof value.remainingPercent !== "number" || !Number.isFinite(value.remainingPercent))
+    return false;
+  if (value.remainingPercent < 0 || value.remainingPercent > 100)
+    return false;
+  if (!value.resetAt || !Number.isFinite(Date.parse(value.resetAt)))
+    return false;
+  if (value.durationSeconds !== undefined && (!Number.isFinite(value.durationSeconds) || value.durationSeconds <= 0)) {
+    return false;
+  }
+  return amount(value.used) && amount(value.limit);
+};
+var cap = (value) => text(value.id, MAX_ID) && text(value.label, MAX_LABEL) && Number.isFinite(value.used) && value.used >= 0 && Number.isFinite(value.limit) && value.limit > 0 && text(value.unit, MAX_UNIT);
+var balance = (value) => text(value.id, MAX_ID) && text(value.label, MAX_LABEL) && Number.isFinite(value.value) && text(value.unit, MAX_UNIT);
+var assertAdapterResult = (result) => {
+  if (!Array.isArray(result.windows) || !Array.isArray(result.caps) || !Array.isArray(result.balances) || !result.windows.every(window) || !result.caps.every(cap) || !result.balances.every(balance)) {
+    throw new HttpError("bad_response", "The provider returned invalid quota data.");
+  }
+};
+
+// src/service/http.ts
+import https from "node:https";
+var requestOnce = (url, options) => new Promise((resolve, reject) => {
+  const target = new URL(url);
+  if (target.protocol !== "https:") {
+    reject(new HttpError("network", "Only HTTPS endpoints are allowed."));
+    return;
+  }
+  if (options.signal?.aborted) {
+    reject(new HttpError("timeout", "The operation was cancelled."));
+    return;
+  }
+  const timeout = effectiveTimeout(options, Date.now());
+  if (timeout <= 0) {
+    reject(new HttpError("timeout", "The provider did not answer in time."));
+    return;
+  }
+  const request = https.request(target, {
+    method: options.method ?? "GET",
+    headers: options.headers,
+    timeout,
+    signal: options.signal
+  }, (response) => {
+    const status = response.statusCode ?? 0;
+    if (status >= 300 && status < 400) {
+      response.resume();
+      reject(new HttpError("bad_response", "The provider redirected the request."));
+      return;
+    }
+    const chunks = [];
+    let size = 0;
+    response.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > (options.maxBytes ?? 65536)) {
+        request.destroy();
+        reject(new HttpError("bad_response", "The provider response is too large."));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    response.on("end", () => {
+      if (status === 401 || status === 403) {
+        reject(new HttpError("auth", "The provider rejected the credential.", status));
+        return;
+      }
+      if (status === 429) {
+        reject(new HttpError("rate_limited", "Rate limited.", status, parseRetryAt(response.headers["retry-after"], Date.now())));
+        return;
+      }
+      if (status < 200 || status >= 300) {
+        reject(new HttpError("provider_error", `The provider returned HTTP ${status}.`, status));
+        return;
+      }
+      const text = Buffer.concat(chunks).toString("utf8");
+      try {
+        resolve({
+          status,
+          body: text ? JSON.parse(text) : null,
+          contentType: response.headers["content-type"]
+        });
+      } catch {
+        reject(new HttpError("bad_response", "The provider returned invalid JSON.", status));
+      }
+    });
+  });
+  request.on("timeout", () => {
+    request.destroy();
+    reject(new HttpError("timeout", "The provider did not answer in time."));
+  });
+  request.on("error", (error) => {
+    if (error instanceof HttpError)
+      reject(error);
+    else if (options.signal?.aborted)
+      reject(new HttpError("timeout", "The operation was cancelled."));
+    else
+      reject(new HttpError("network", "Could not reach the provider."));
+  });
+  if (options.body)
+    request.write(options.body);
+  request.end();
+});
+var requestJson = (url, options = {}) => requestOnce(url, options);
+
 // src/service/snapshot.ts
 var emptyProvider = (connection) => ({
   connectionId: connection.id,
@@ -8932,46 +9825,105 @@ var emptyProvider = (connection) => ({
   windows: [],
   caps: [],
   balances: [],
-  refreshing: true
+  refreshing: false
 });
 var toQuotaError = (error) => {
   if (error instanceof HttpError) {
     return {
       code: error.code,
-      message: error.message,
+      message: sanitizeMessage(error.message),
       ...error.retryAt ? { retryAt: error.retryAt } : {}
     };
   }
   return { code: "provider_error", message: "The provider request failed." };
 };
+var transient2 = (error) => !["auth", "not_configured"].includes(error.code);
 
 class SnapshotService {
   deps;
   providers = new Map;
+  lastSuccess = new Map;
   retryTimers = new Map;
   generatedAt = new Date(0).toISOString();
   now;
+  bridge;
+  bridgeConnected = false;
+  cacheWrites = Promise.resolve();
+  serviceTimer = null;
   constructor(deps) {
     this.deps = deps;
     this.now = deps.now ?? Date.now;
+    this.bridge = deps.bridge ?? new BridgeService({ serverId: serverIdFor(deps.dataDir), now: this.now });
+  }
+  get settings() {
+    return this.deps.settings;
+  }
+  start() {
+    if (this.serviceTimer !== null)
+      return;
+    this.serviceTimer = setInterval(() => void this.refreshServiceProviders().catch(() => {
+      return;
+    }), BridgeTiming.fetchIntervalMs);
+    this.serviceTimer.unref?.();
+  }
+  stop() {
+    if (this.serviceTimer !== null)
+      clearInterval(this.serviceTimer);
+    this.serviceTimer = null;
   }
   async loadCache() {
     try {
-      const { scheduler, ...cached } = JSON.parse(await readFile3(path3.join(this.deps.dataDir, "cache.json"), "utf8"));
-      if (!validateSnapshot(cached))
+      const cached = JSON.parse(await readFile4(path4.join(this.deps.dataDir, "cache.json"), "utf8"));
+      if (!validateSnapshot({
+        version: cached.version,
+        generatedAt: cached.generatedAt,
+        providers: cached.providers
+      })) {
         return;
+      }
       this.generatedAt = cached.generatedAt;
-      for (const provider of cached.providers)
-        this.providers.set(provider.connectionId, provider);
-      this.deps.scheduler.importState(scheduler);
+      this.bridgeConnected = cached.bridgeConnected === true || Object.keys(cached.lastSuccess ?? {}).some(isBridgeConnectionId) || cached.providers.some((provider) => isBridgeConnectionId(provider.connectionId) && provider.fetchedAt);
+      this.bridge.restorePublication(cached.bridgePublication);
+      for (const provider of cached.providers) {
+        this.providers.set(provider.connectionId, isBridgeConnectionId(provider.connectionId) && provider.state === "ok" && provider.fetchedAt ? {
+          ...provider,
+          error: { code: "provider_error", message: bridgeUnavailableMessage }
+        } : provider);
+      }
+      const success = (provider) => ({
+        ...structuredClone(provider),
+        error: undefined
+      });
+      if (cached.lastSuccess && typeof cached.lastSuccess === "object") {
+        for (const [id, provider] of Object.entries(cached.lastSuccess)) {
+          this.lastSuccess.set(id, success(provider));
+        }
+      } else {
+        for (const provider of cached.providers) {
+          if (provider.state === "ok" && provider.fetchedAt) {
+            this.lastSuccess.set(provider.connectionId, success(provider));
+          }
+        }
+      }
+      this.deps.scheduler.importState(cached.scheduler);
+      this.ensureBridgeProviders();
     } catch {}
   }
-  context() {
+  ensureBridgeProviders() {
+    for (const row of BRIDGE_PROVIDERS) {
+      if (this.providers.has(row.connectionId))
+        continue;
+      const success = this.lastSuccess.get(row.connectionId);
+      this.providers.set(row.connectionId, success ? structuredClone(success) : notConfiguredEntry(row));
+    }
+  }
+  context(deadlineAt, signal) {
     return {
       now: this.now,
       requestJson: this.deps.requestJson ?? requestJson,
       dataDir: this.deps.dataDir,
-      codexHome: this.deps.codexHome
+      deadlineAt,
+      signal
     };
   }
   snapshotFor(connection) {
@@ -8983,42 +9935,105 @@ class SnapshotService {
     }
     const created = emptyProvider(connection);
     this.providers.set(connection.id, created);
-    this.startRefresh(connection.id);
     return created;
   }
+  bridgeProviders() {
+    this.ensureBridgeProviders();
+    return BRIDGE_PROVIDERS.map((row) => structuredClone(this.providers.get(row.connectionId)));
+  }
   getSnapshot() {
+    this.ensureBridgeProviders();
+    if (this.bridge.isExpired()) {
+      this.markUnavailable(bridgeUnavailableMessage);
+    }
     const connections = this.deps.store.list();
     const ids = new Set(connections.map((connection) => connection.id));
     for (const id of this.providers.keys()) {
-      if (!ids.has(id)) {
-        this.providers.delete(id);
-        this.clearRetry(id);
-      }
+      if (ids.has(id) || BRIDGE_PROVIDERS.some((row) => row.connectionId === id))
+        continue;
+      this.providers.delete(id);
+      this.lastSuccess.delete(id);
+      this.clearRetry(id);
     }
+    const pending = this.bridge.pending();
+    const bridgeEntries = BRIDGE_PROVIDERS.map((row) => {
+      const entry = this.providers.get(row.connectionId);
+      const current = entry.refreshing === pending ? entry : { ...entry, refreshing: pending };
+      if (current.state === "ok" && !current.error && isStaleSample(current, this.now())) {
+        return {
+          ...current,
+          error: {
+            code: "provider_error",
+            message: "The last reading is more than ten minutes old."
+          }
+        };
+      }
+      return current;
+    });
+    const serviceEntries = connections.map((connection) => {
+      const entry = this.snapshotFor(connection);
+      if (entry.state === "loading")
+        this.startRefresh(connection.id);
+      return entry;
+    });
     return {
       version: 1,
       generatedAt: this.generatedAt,
-      providers: connections.map((connection) => this.snapshotFor(connection))
+      providers: [...serviceEntries, ...bridgeEntries]
     };
+  }
+  async refreshAll() {
+    const request = this.bridge.admit();
+    if (this.bridge.isExpired())
+      this.markUnavailable(bridgeUnavailableMessage);
+    this.markPending(true);
+    this.refreshServiceProviders(true).catch(() => {
+      return;
+    });
+    return request;
+  }
+  async refreshAllAndWait() {
+    const request = this.bridge.admit();
+    if (this.bridge.isExpired())
+      this.markUnavailable(bridgeUnavailableMessage);
+    this.markPending(true);
+    await this.refreshServiceProviders(true);
+    return request;
+  }
+  async refreshServiceProviders(manual = false) {
+    await Promise.all(this.deps.store.entries().map((entry) => this.refreshOne(entry, manual)));
+    this.generatedAt = new Date(this.now()).toISOString();
+    await this.saveCache();
   }
   isRefreshing(connectionId) {
     if (connectionId)
       return this.deps.scheduler.isRefreshing(connectionId);
-    return this.deps.store.list().some((connection) => this.deps.scheduler.isRefreshing(connection.id));
+    return this.bridge.pending() || this.deps.store.entries().some((entry) => this.deps.scheduler.isRefreshing(entry.id));
   }
   startRefresh(connectionId) {
-    this.refresh(connectionId).catch(() => {
+    if (connectionId) {
+      const entry = this.deps.store.get(connectionId);
+      if (entry)
+        this.refreshOne(entry).catch(() => {
+          return;
+        });
+      return;
+    }
+    this.refreshAll().catch(() => {
       return;
     });
   }
   async refresh(connectionId) {
-    const entries = connectionId ? this.deps.store.get(connectionId) ? [this.deps.store.get(connectionId)] : [] : this.deps.store.entries();
-    await Promise.all(entries.map((entry) => this.refreshOne(entry)));
-    this.generatedAt = new Date(this.now()).toISOString();
-    await this.saveCache();
+    if (connectionId) {
+      const entry = this.deps.store.get(connectionId);
+      if (entry)
+        await this.refreshOne(entry, true);
+    } else {
+      await this.refreshAllAndWait();
+    }
     return this.getSnapshot();
   }
-  async refreshOne(entry) {
+  async refreshOne(entry, manual = false) {
     const provider = this.snapshotFor(entry);
     const adapter = ADAPTERS[entry.kind];
     if (!adapter) {
@@ -9028,7 +10043,7 @@ class SnapshotService {
       return;
     }
     const now = this.now();
-    if (!this.deps.scheduler.begin(entry.id, adapter.minIntervalMs, now)) {
+    if (!this.deps.scheduler.begin(entry.id, adapter.minIntervalMs, now, { manual })) {
       provider.refreshing = this.deps.scheduler.isRefreshing(entry.id);
       if (!provider.refreshing)
         this.scheduleRetry(entry, adapter.minIntervalMs);
@@ -9036,28 +10051,117 @@ class SnapshotService {
     }
     this.clearRetry(entry.id);
     provider.refreshing = true;
+    const controller = new AbortController;
+    const deadlineAt = now + BridgeTiming.fetchTimeoutMs;
+    const timer = setTimeout(() => controller.abort(), BridgeTiming.fetchTimeoutMs);
+    timer.unref?.();
     try {
-      const result = await adapter.fetch(entry, this.context());
+      const result = await adapter.fetch(entry, this.context(deadlineAt, controller.signal));
       assertAdapterResult(result);
-      provider.state = "ok";
-      provider.windows = result.windows;
-      provider.caps = result.caps;
-      provider.balances = result.balances;
-      provider.fetchedAt = new Date(now).toISOString();
-      provider.error = undefined;
+      const fresh = {
+        ...provider,
+        state: "ok",
+        windows: result.windows,
+        caps: result.caps,
+        balances: result.balances,
+        fetchedAt: new Date(this.now()).toISOString(),
+        refreshing: false,
+        error: undefined
+      };
+      this.providers.set(entry.id, fresh);
+      this.lastSuccess.set(entry.id, structuredClone(fresh));
       this.deps.scheduler.finish(entry.id);
     } catch (error) {
       const quotaError = toQuotaError(error);
-      provider.state = "error";
-      provider.windows = [];
-      provider.caps = [];
-      provider.balances = [];
-      provider.error = quotaError;
+      const sample = this.lastSuccess.get(entry.id);
+      if (sample && transient2(quotaError)) {
+        this.providers.set(entry.id, {
+          ...structuredClone(sample),
+          state: "ok",
+          refreshing: false,
+          error: { code: "provider_error", message: quotaError.message }
+        });
+      } else {
+        this.providers.set(entry.id, {
+          ...provider,
+          state: "error",
+          windows: [],
+          caps: [],
+          balances: [],
+          refreshing: false,
+          error: quotaError
+        });
+      }
       const retryAt = quotaError.retryAt ? Date.parse(quotaError.retryAt) : undefined;
-      this.deps.scheduler.finish(entry.id, retryAt);
+      this.deps.scheduler.finish(entry.id, retryAt && Number.isFinite(retryAt) ? Math.min(retryAt, this.now() + RETRY_WAIT_MAX_MS) : undefined, true);
     } finally {
-      provider.refreshing = false;
+      clearTimeout(timer);
+      const current = this.providers.get(entry.id);
+      if (current)
+        current.refreshing = false;
     }
+  }
+  markPending(pending) {
+    const state = {
+      current: Object.fromEntries(this.providers),
+      lastSuccess: Object.fromEntries(this.lastSuccess)
+    };
+    const merged = markBridgePending(state, pending);
+    for (const row of BRIDGE_PROVIDERS) {
+      const entry = merged.current[row.connectionId];
+      if (entry)
+        this.providers.set(row.connectionId, entry);
+    }
+  }
+  markUnavailable(message) {
+    const state = markBridgeUnavailable({
+      current: Object.fromEntries(this.providers),
+      lastSuccess: Object.fromEntries(this.lastSuccess)
+    }, this.now(), message, this.bridgeConnected);
+    for (const row of BRIDGE_PROVIDERS) {
+      const entry = state.current[row.connectionId];
+      if (entry)
+        this.providers.set(row.connectionId, entry);
+    }
+    this.generatedAt = new Date(this.now()).toISOString();
+  }
+  async acceptBridge(snapshot) {
+    this.bridgeConnected = true;
+    const merged = mergeBridgeResult({
+      current: Object.fromEntries(this.providers),
+      lastSuccess: Object.fromEntries(this.lastSuccess)
+    }, snapshot.providers, this.now());
+    for (const row of BRIDGE_PROVIDERS) {
+      const entry = merged.current[row.connectionId];
+      if (entry) {
+        entry.refreshing = false;
+        this.providers.set(row.connectionId, entry);
+      }
+      const success = merged.lastSuccess[row.connectionId];
+      if (success)
+        this.lastSuccess.set(row.connectionId, success);
+      else
+        this.lastSuccess.delete(row.connectionId);
+    }
+    this.generatedAt = new Date(this.now()).toISOString();
+    await this.settings?.reconcile(this.bridgeProviders());
+    await this.saveCache();
+  }
+  async acceptBridgeInput(input) {
+    const accepted = this.bridge.accept(input);
+    if (this.bridge.isExpired())
+      this.markUnavailable(bridgeUnavailableMessage);
+    if (!accepted.ok)
+      return accepted;
+    await this.acceptBridge(accepted.snapshot);
+    return { ok: true, requestId: accepted.snapshot.requestId };
+  }
+  async bridgeState() {
+    if (this.bridge.isExpired()) {
+      this.markUnavailable(bridgeUnavailableMessage);
+      await this.saveCache();
+    }
+    return this.bridge.state();
   }
   scheduleRetry(entry, minIntervalMs) {
     if (this.retryTimers.has(entry.id))
@@ -9069,7 +10173,7 @@ class SnapshotService {
       return;
     const timer = setTimeout(() => {
       this.retryTimers.delete(entry.id);
-      this.refresh(entry.id).catch(() => {
+      this.refreshServiceProviders().catch(() => {
         return;
       });
     }, delay);
@@ -9090,8 +10194,11 @@ class SnapshotService {
     const adapter = ADAPTERS[entry.kind];
     if (!adapter)
       return { ok: false, error: { code: "provider_error", message: "Unsupported provider." } };
+    const controller = new AbortController;
+    const timer = setTimeout(() => controller.abort(), BridgeTiming.fetchTimeoutMs);
+    timer.unref?.();
     try {
-      assertAdapterResult(await adapter.fetch(entry, this.context()));
+      assertAdapterResult(await adapter.fetch(entry, this.context(this.now() + BridgeTiming.fetchTimeoutMs, controller.signal)));
       await this.deps.store.setTestResult(id, "ok");
       return { ok: true };
     } catch (error) {
@@ -9099,38 +10206,41 @@ class SnapshotService {
       const result = quotaError.code === "auth" ? "auth" : quotaError.code === "network" || quotaError.code === "timeout" ? "network" : quotaError.code === "bad_response" ? "bad_response" : "provider_error";
       await this.deps.store.setTestResult(id, result);
       return { ok: false, error: quotaError };
+    } finally {
+      clearTimeout(timer);
     }
   }
-  async saveCache() {
-    await mkdir2(this.deps.dataDir, { recursive: true });
-    const file = path3.join(this.deps.dataDir, "cache.json");
-    const temp = `${file}.${process.pid}.${randomUUID2()}.tmp`;
-    await writeFile2(temp, JSON.stringify({ ...this.getSnapshot(), scheduler: this.deps.scheduler.exportState() }, null, 2), { mode: 384 });
-    await rename2(temp, file);
+  saveCache() {
+    const write = async () => {
+      await mkdir4(this.deps.dataDir, { recursive: true });
+      const file = path4.join(this.deps.dataDir, "cache.json");
+      const temp = `${file}.${process.pid}.${randomUUID4()}.tmp`;
+      const payload = {
+        ...this.getSnapshot(),
+        bridgeConnected: this.bridgeConnected,
+        bridgePublication: this.bridge.lastPublication(),
+        lastSuccess: Object.fromEntries(this.lastSuccess),
+        scheduler: this.deps.scheduler.exportState()
+      };
+      await writeFile4(temp, JSON.stringify(payload, null, 2), { mode: 384 });
+      await rename4(temp, file);
+    };
+    this.cacheWrites = this.cacheWrites.then(write, write);
+    return this.cacheWrites;
   }
 }
-
-// src/core/types.ts
-var PROVIDER_KINDS = [
-  "custom",
-  "codex",
-  "opencode-go",
-  "openrouter",
-  "tavily",
-  "opencode-zen"
-];
 
 // src/service/routes.ts
 var json = (status, body) => ({ status, body });
 var error2 = (status, code, message, extra) => json(status, { error: { code, message, ...extra } });
-var isRecord2 = (value) => !!value && typeof value === "object" && !Array.isArray(value);
+var isRecord5 = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 var isKind = (value) => typeof value === "string" && PROVIDER_KINDS.includes(value);
 var readBody = (body) => {
   if (!body.trim())
     return {};
   try {
     const parsed = JSON.parse(body);
-    return isRecord2(parsed) ? parsed : null;
+    return isRecord5(parsed) ? parsed : null;
   } catch {
     return null;
   }
@@ -9157,6 +10267,11 @@ var connectionInput = (body, existing, id) => {
     return { error: error2(400, "bad_request", `Unknown field: ${unknown}.`) };
   if (!isKind(body.kind))
     return { error: error2(400, "bad_request", "Unknown provider kind.") };
+  if (isManagedKind(body.kind)) {
+    return {
+      error: error2(400, "bad_request", "This provider signs in through OpenCode and cannot store a key here.")
+    };
+  }
   const label = validLabel(body.label);
   if (!label)
     return { error: error2(400, "bad_request", "Label must be 1–60 characters.") };
@@ -9164,7 +10279,7 @@ var connectionInput = (body, existing, id) => {
   if (body.apiKey !== undefined && !apiKey) {
     return { error: error2(400, "bad_request", "Key must be 1–4096 characters.") };
   }
-  if (!existing && body.kind !== "codex" && body.kind !== "custom" && !apiKey) {
+  if (!existing && !apiKey) {
     return { error: error2(400, "bad_request", "A key is required.") };
   }
   let endpoint;
@@ -9187,14 +10302,28 @@ var connectionInput = (body, existing, id) => {
     }
   };
 };
+var REFRESH_FILTERS = new Set([
+  "connectionId",
+  "provider",
+  "providerId",
+  "providers",
+  "kind",
+  "connection",
+  "requestedProviders"
+]);
 var handleRequest = async (deps, request) => {
+  const url = new URL(request.path, "http://127.0.0.1");
+  const method = request.method.toUpperCase();
   const authorization = request.headers.authorization;
-  if (authorization !== `Bearer ${deps.token}`) {
+  const bridgeRoute = url.pathname.startsWith("/bridge/");
+  if (bridgeRoute) {
+    if (!deps.bridgeToken || authorization !== `Bearer ${deps.bridgeToken}`) {
+      return error2(401, "unauthorized", "Missing or wrong bridge token.");
+    }
+  } else if (authorization !== `Bearer ${deps.token}`) {
     return error2(401, "unauthorized", "Missing or wrong service token.");
   }
-  const url = new URL(request.path, "http://127.0.0.1");
   const parts = url.pathname.split("/").filter(Boolean);
-  const method = request.method.toUpperCase();
   if (method === "GET" && url.pathname === "/health") {
     return json(200, { ok: true, version: 1 });
   }
@@ -9209,15 +10338,42 @@ var handleRequest = async (deps, request) => {
     const body = readBody(request.body);
     if (body === null)
       return error2(400, "bad_request", "Body must be JSON.");
-    const connectionId = typeof body.connectionId === "string" ? body.connectionId : undefined;
-    if (connectionId && !deps.store.get(connectionId)) {
-      return error2(404, "not_found", "Unknown connection.");
+    const filter = Object.keys(body).find((key) => REFRESH_FILTERS.has(key));
+    if (filter || [...url.searchParams.keys()].some((key) => REFRESH_FILTERS.has(key))) {
+      return error2(400, "bad_request", "Refresh always covers all providers.");
     }
-    if (connectionId && deps.snapshot.isRefreshing(connectionId)) {
-      return error2(409, "conflict", "A refresh is already running.");
+    if (Object.keys(body).length > 0 || url.search) {
+      return error2(400, "bad_request", "Refresh accepts no options.");
     }
-    deps.snapshot.startRefresh(connectionId);
-    return json(202, { accepted: true });
+    const accepted = await deps.snapshot.refreshAll();
+    return json(202, { accepted: true, ...accepted });
+  }
+  if (method === "GET" && url.pathname === "/settings") {
+    return json(200, deps.settings.get());
+  }
+  if (method === "PATCH" && url.pathname === "/settings") {
+    const body = readBody(request.body);
+    if (body === null)
+      return error2(400, "bad_request", "Body must be JSON.");
+    const result = await deps.settings.patch(body);
+    if (result.status === 400)
+      return error2(400, "bad_request", result.message);
+    if (result.status === 409) {
+      return json(409, { error: { code: "conflict", message: "Settings changed." }, ...result.envelope });
+    }
+    return json(200, result.envelope);
+  }
+  if (method === "GET" && url.pathname === "/bridge/state") {
+    return json(200, await deps.snapshot.bridgeState());
+  }
+  if (method === "POST" && url.pathname === "/bridge/snapshot") {
+    const body = readBody(request.body);
+    if (body === null)
+      return error2(400, "bad_request", "Body must be JSON.");
+    const result = await deps.snapshot.acceptBridgeInput(body);
+    if (!result.ok)
+      return error2(result.status, result.status === 409 ? "conflict" : "bad_request", result.message);
+    return json(200, { accepted: true, requestId: result.requestId });
   }
   if (method === "GET" && url.pathname === "/connections") {
     return json(200, { connections: deps.store.list() });
@@ -9270,19 +10426,27 @@ var handleRequest = async (deps, request) => {
 // src/service/main.ts
 var port = Number(process.env.OPENCHAMBER_SERVICE_PORT);
 var token = process.env.OPENCHAMBER_SERVICE_TOKEN ?? "";
-var dataDir = process.env.OPENCHAMBER_SERVICE_DATA_DIR ?? path4.join(os2.homedir(), ".openchamber-quota");
+var dataDir = path5.resolve(process.env.OPENCHAMBER_SERVICE_DATA_DIR ?? path5.join(os2.homedir(), ".openchamber-quota"));
 if (!port || !token) {
   console.error("OPENCHAMBER_SERVICE_PORT and OPENCHAMBER_SERVICE_TOKEN are required");
   process.exit(1);
 }
+var serverId = serverIdFor(dataDir);
 var store = new CredentialStore(dataDir);
 await store.load();
+var settings = new SettingsService(dataDir);
+await settings.load();
+var bridge = new BridgeService({ serverId });
 var snapshot = new SnapshotService({
   store,
   scheduler: new Scheduler,
-  dataDir
+  dataDir,
+  bridge,
+  settings
 });
 await snapshot.loadCache();
+snapshot.start();
+var descriptor = new BridgeDescriptorWriter(serverId, port);
 var server = http.createServer((request, response) => {
   const chunks = [];
   let size = 0;
@@ -9303,7 +10467,9 @@ var server = http.createServer((request, response) => {
       const result = await handleRequest({
         store,
         snapshot,
+        settings,
         token,
+        bridgeToken: descriptor.descriptor().token,
         dataDir
       }, {
         method: request.method ?? "GET",
@@ -9319,4 +10485,23 @@ var server = http.createServer((request, response) => {
     }
   });
 });
-server.listen(port, "127.0.0.1");
+var closing = false;
+var shutdown = async () => {
+  if (closing)
+    return;
+  closing = true;
+  snapshot.stop();
+  await descriptor.cleanup();
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 1000).unref?.();
+};
+process.once("SIGINT", () => void shutdown());
+process.once("SIGTERM", () => void shutdown());
+process.once("exit", () => {
+  descriptor.cleanup();
+});
+server.listen(port, "127.0.0.1", () => {
+  descriptor.publish().catch(() => {
+    console.error("Could not publish the OpenCode bridge descriptor.");
+  });
+});

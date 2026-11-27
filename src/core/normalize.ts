@@ -140,6 +140,21 @@ export const formatAmount = (value: number, unit: string): string => {
   return `${value} ${unit}`;
 };
 
+/** Compact age of a sampled reading; never invents a future value. */
+export const formatAge = (iso: string | undefined, nowMs: number): string => {
+  if (!iso) return "unknown";
+  const then = Date.parse(iso);
+  if (!Number.isFinite(then)) return "unknown";
+  const seconds = Math.max(0, Math.floor((nowMs - then) / 1000));
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+};
+
 export const selectedProviderIds = (selection: DisplaySelection, available: string[]): string[] => {
   if (!selection.saved) return available;
   return available.filter((id) => selection.providers.includes(id));

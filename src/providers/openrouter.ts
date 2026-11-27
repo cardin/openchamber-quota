@@ -1,6 +1,7 @@
 import type { Adapter } from "./types.ts";
+import { PROVIDER_MIN_INTERVAL_MS } from "../core/bridge.ts";
 import { asNumber, asRecord, asString } from "./parse.ts";
-import { HttpError } from "../service/http.ts";
+import { HttpError } from "../core/http-error.ts";
 import type { Balance, QuotaWindow } from "../core/types.ts";
 
 const PERIOD_SECONDS: Record<string, number> = {
@@ -38,13 +39,15 @@ const calendarPeriod = (period: string, now: number): { resetAt: string; seconds
 
 export const openRouterAdapter: Adapter = {
   kind: "openrouter",
-  minIntervalMs: 5 * 60_000,
+  minIntervalMs: PROVIDER_MIN_INTERVAL_MS,
   fetch: async (connection, context) => {
-    const apiKey = connection.secret.apiKey;
-    if (!apiKey) throw new HttpError("not_configured", "OpenRouter has no API key.");
+    const token = connection.secret.apiKey ?? connection.secret.accessToken;
+    if (!token) throw new HttpError("not_configured", "OpenRouter has no API key.");
     const response = await context.requestJson("https://openrouter.ai/api/v1/key", {
-      headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
+      headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
       timeoutMs: 10_000,
+      deadlineAt: context.deadlineAt,
+      signal: context.signal,
     });
     const body = asRecord(response.body) ?? {};
     const data = asRecord(body.data) ?? body;

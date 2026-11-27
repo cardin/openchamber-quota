@@ -1,48 +1,28 @@
 import https from "node:https";
-import type { QuotaErrorCode } from "../core/types.ts";
+import {
+  HttpError,
+  effectiveTimeout,
+  parseRetryAt,
+} from "../core/http-error.ts";
+import type { HttpOptions, HttpResult } from "../core/http-error.ts";
 
-export class HttpError extends Error {
-  readonly code: QuotaErrorCode;
-  readonly status?: number;
-  readonly retryAt?: string;
+export { HttpError, parseRetryAt, effectiveTimeout } from "../core/http-error.ts";
+export type { HttpOptions, HttpResult } from "../core/http-error.ts";
 
-  constructor(code: QuotaErrorCode, message: string, status?: number, retryAt?: string) {
-    super(message);
-    this.name = "HttpError";
-    this.code = code;
-    this.status = status;
-    this.retryAt = retryAt;
-  }
-}
-
-export type HttpOptions = {
-  method?: string;
-  headers?: Record<string, string>;
-  timeoutMs?: number;
-  body?: string;
-  maxBytes?: number;
-};
-
-export type HttpResult = { status: number; body: unknown; contentType?: string };
-
-const parseRetryAt = (value: string | string[] | undefined, now: number): string | undefined => {
-  if (!value) return undefined;
-  const raw = Array.isArray(value) ? value[0] : value;
-  const seconds = Number(raw);
-  if (Number.isFinite(seconds)) return new Date(now + seconds * 1000).toISOString();
-  const date = Date.parse(raw);
-  return Number.isFinite(date) ? new Date(date).toISOString() : undefined;
-};
-
-const requestOnce = (
-  url: string,
-  options: HttpOptions,
-  redirects: number,
-): Promise<HttpResult> =>
+const requestOnce = (url: string, options: HttpOptions): Promise<HttpResult> =>
   new Promise((resolve, reject) => {
     const target = new URL(url);
     if (target.protocol !== "https:") {
       reject(new HttpError("network", "Only HTTPS endpoints are allowed."));
+      return;
+    }
+    if (options.signal?.aborted) {
+      reject(new HttpError("timeout", "The operation was cancelled."));
+      return;
+    }
+    const timeout = effectiveTimeout(options, Date.now());
+    if (timeout <= 0) {
+      reject(new HttpError("timeout", "The provider did not answer in time."));
       return;
     }
 
@@ -51,7 +31,8 @@ const requestOnce = (
       {
         method: options.method ?? "GET",
         headers: options.headers,
-        timeout: options.timeoutMs ?? 10_000,
+        timeout,
+        signal: options.signal,
       },
       (response) => {
         const status = response.statusCode ?? 0;
@@ -80,7 +61,7 @@ const requestOnce = (
             reject(
               new HttpError(
                 "rate_limited",
-                "The provider rate-limited the request.",
+                "Rate limited.",
                 status,
                 parseRetryAt(response.headers["retry-after"], Date.now()),
               ),
@@ -111,6 +92,7 @@ const requestOnce = (
     });
     request.on("error", (error) => {
       if (error instanceof HttpError) reject(error);
+      else if (options.signal?.aborted) reject(new HttpError("timeout", "The operation was cancelled."));
       else reject(new HttpError("network", "Could not reach the provider."));
     });
 
@@ -119,4 +101,4 @@ const requestOnce = (
   });
 
 export const requestJson = (url: string, options: HttpOptions = {}): Promise<HttpResult> =>
-  requestOnce(url, options, 0);
+  requestOnce(url, options);

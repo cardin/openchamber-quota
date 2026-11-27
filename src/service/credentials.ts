@@ -8,6 +8,8 @@ import type {
   StoredConnection,
 } from "../core/types.ts";
 
+import { isManagedKind } from "../core/bridge.ts";
+
 type StoreFile = {
   version: 1;
   connections: StoredConnection[];
@@ -71,15 +73,17 @@ export class CredentialStore {
   }
 
   list(): Connection[] {
-    return this.data.connections.map(toPublic);
+    return this.data.connections.filter((entry) => !isManagedKind(entry.kind)).map(toPublic);
   }
 
+  /** Service-owned custom credentials only; OpenCode-owned kinds are excluded. */
   entries(): StoredConnection[] {
-    return [...this.data.connections];
+    return this.data.connections.filter((entry) => !isManagedKind(entry.kind));
   }
 
   get(id: string): StoredConnection | undefined {
-    return this.data.connections.find((entry) => entry.id === id);
+    const entry = this.data.connections.find((candidate) => candidate.id === id);
+    return entry && !isManagedKind(entry.kind) ? entry : undefined;
   }
 
   async upsert(input: {
@@ -91,6 +95,9 @@ export class CredentialStore {
     accessToken?: string;
     accountId?: string;
   }): Promise<Connection> {
+    if (isManagedKind(input.kind)) {
+      throw new Error("This provider signs in through OpenCode and cannot store a key here.");
+    }
     const existing = input.id ? this.get(input.id) : undefined;
     if (isNamedKind(input.kind)) {
       const clash = this.data.connections.find(

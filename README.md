@@ -1,60 +1,41 @@
-# Quota Display for OpenChamber
+<h1 align="center">Quota Display for OpenChamber</h1>
 
-See how much quota you have left, how fast you are using it, and when it resets without leaving your session.
+<p align="center">
+  <img src="favicon.svg" width="64" height="64" alt="Quota Display icon">
+</p>
 
-<img src="docs/assets/quotas-panel.png" width="360" alt="The Quotas section in OpenChamber's Work Status panel">
+See what you have left, when it resets, and whether you’re on pace—without leaving your OpenChamber session. Expand a provider for detailed bars, or collapse it to the one number you care about.
 
-## Why use it
+<img src="docs/assets/quotas-panel.png" width="300" alt="Expanded Quotas showing usage bars and reset times">
+<img src="docs/assets/quotas-collapsed.png" width="300" alt="Collapsed Quotas with one summary per provider, including Tavily pay-as-you-go usage">
 
-- Keep Tavily, OpenRouter, and OpenCode Go quotas in one compact Work Status section.
-- See remaining or used quota, the even-use benchmark, reset times, caps, and balances.
-- Spot trouble early with warning and danger colours.
-- Choose the providers and windows you care about, and hide rows you do not need.
-- Keys stay in the extension's local service; the plugin does not read OpenChamber's credential store.
+## Get started
 
-## Install
+Requires **OpenChamber 2.8.0 or later** on web or desktop. Not available in VS Code.
+OpenCode and the OpenChamber server must run on the same machine to refresh OpenCode-backed quotas.
 
-Requires OpenChamber 2.8.0 or later on web or desktop. VS Code does not load extensions.
-
-1. Open **Settings → Extensions → Add extension**.
-2. Select this folder or a ZIP of it.
-3. Approve the local service.
-4. Open **Work Status** beside the chat. The **Quotas** section is there; use **Choose sections** if it is hidden.
-
-## Configure
-
-Open **Quota settings** from the sidebar's **Pages** section.
-
-1. Add a provider and paste its API key. Use the eye button in the key field to check what you pasted, then **Test** the connection.
-2. Choose the providers and windows to show. A new provider appears automatically; a new window type stays off until you enable it.
-3. Pick **Remaining** (default) or **Used**, set the danger cutoff, and choose relative or absolute reset times.
-
-Codex, Zen, and custom provider setup are hidden in this release while OAuth or a live endpoint is verified. Existing connections remain supported.
+1. Go to **Settings → Extensions → Add extension** and select this folder or a ZIP of it.
+2. Approve the local service and OpenCode plugin.
+3. Connect your providers in OpenCode CLI
+4. Reopen OpenChamber and look for **Quotas** in **Work Status**. If it’s hidden, use **Choose sections**.
 
 ## Supported providers
 
-| Provider | Sign-in | What you get |
-| --- | --- | --- |
-| Tavily | API key | Plan, key, and PAYG limits, plus PAYG balance |
-| OpenRouter | API key | Credit limit and monthly spend |
-| OpenCode Go | API key | 5-hour, weekly, and monthly windows |
+**OpenRouter, OpenCode Go, OpenCode Zen, OpenAI, Tavily, and Exa.**
 
-Tavily, OpenRouter, and OpenCode Go are verified with live keys. Codex, Zen, and custom adapters remain, but their setup is hidden until OAuth or a live endpoint can be verified.
+- OpenAI quota requires a ChatGPT sign-in in OpenCode
+- Exa team credits require a Team Management service key, not a regular search key.
 
-## Notes
+## Make it yours
 
-- **Quotas** is display-only. Refresh it from the section header; it also refreshes while visible and after a window resets.
-- The extension runs a small local service for provider requests and credentials. It never returns raw keys to the panel.
-- Full requirements, design, interfaces, and test notes are in [`docs/README.md`](docs/README.md).
+Open **Pages → Quota settings** to show, hide, or reorder providers, pick what each collapsed row shows, and switch between **Remaining** and **Used**. Quotas remembers which providers you collapsed when you reopen OpenChamber. Display settings are shared across windows on the same server. Quotas refresh every five minutes; check **Provider status** in settings if authentication fails.
 
-## Development
+If several OpenChamber servers run on one machine, set the plugin's `bridgeServerId` option where the OpenCode plugin entry supports options; otherwise the plugin binds only while exactly one bridge is live. Display settings and the last readings persist across restarts. Existing extension data is not wiped automatically, and OpenCode sign-ins are never changed.
 
-Building and testing from source requires Bun 1.4 or later.
+<img src="docs/assets/quota-settings.png" width="690" alt="Quota settings with the provider status table, display controls, and the Tavily pay-as-you-go summary selected">
 
-```bash
-bun install
-bun run typecheck
-bun test
-bun run test:a11y
-bun run build
-```
+[Developer documentation](docs/README.md)
+
+## License and credits
+
+[MIT licensed](LICENSE). See [Credits](CREDITS.md) for acknowledgments and third-party notices.

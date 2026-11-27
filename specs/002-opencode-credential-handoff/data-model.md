@@ -9,9 +9,11 @@ All models below are intended, not implemented. The existing canonical usage sha
 | `openrouter` | OpenRouter | `bridge-openrouter` | `openrouter` |
 | `opencode-go` | OpenCode Go | `bridge-opencode-go` | `opencode-go` |
 | `opencode` | OpenCode Zen | `bridge-opencode-zen` | `opencode-zen` |
-| `openai` | OpenAI Codex | `bridge-codex` | `codex` |
+| `openai` | OpenAI | `bridge-codex` | `codex` |
+| `tavily` | Tavily | `bridge-tavily` | `tavily` |
+| `exa` | Exa | `bridge-exa` | `exa` |
 
-Ids are stable selection keys, not stored-key connections. Use `OpenAI Codex` consistently. T001 must verify the keys against the actual supported OpenCode credential API.
+Ids are stable selection keys, not stored-key connections. Use `OpenAI` for the display name; `codex` remains the internal adapter kind. T001 must verify the keys against the actual supported OpenCode credential API.
 
 ## BridgeTiming
 
@@ -25,29 +27,29 @@ Ids are stable selection keys, not stored-key connections. Use `OpenAI Codex` co
 | `sectionWaitMs` | `15000`: UI wait budget, including final snapshot reload; not a network-success guarantee |
 | `staleAfterMs` | `600000`: successful reading older than ten minutes is historical |
 
-Discovery and fetching are different stages. No pending-only poll is used. The ten-second fetch budget is not renewed by a fallback request. Schedule aborts and ignore late results; an uncooperative underlying call must not hold publication forever. Cache-only cycles can complete immediately. In-flight work is shared, not restarted; if it cannot finish by a cycle deadline, acknowledge with cache/timeout. Provider outages and retry waits are not promised fresh values within these budgets.
+Discovery and fetching are different stages. No pending-only poll is used. The ten-second fetch budget is not renewed by a fallback request. Schedule aborts and ignore late results; an uncooperative underlying call must not hold publication forever. Cache-only cycles can complete immediately. In-flight work is shared, not restarted; if it cannot finish by a cycle deadline, acknowledge with cache/timeout. Provider outages and retry waits are not promised fresh values within these budgets. Manual/event-like refreshes bypass the five-minute poll wait but keep a 30-second floor and honor `Retry-After`; repeated failures back off from one to fifteen minutes, and a provider `Retry-After` is capped at 24 hours.
 
 ## OpenCodeCredential
 
 - `type`: `"api" | "oauth"`.
 - `key`: required string for `api`; maps to `secret.apiKey`.
 - `access`: required string for `oauth`; maps to `secret.accessToken`.
-- `accountId`, `orgID`: optional strings; inside OpenCode only. Codex uses `accountId`; Zen prefers `orgID`, falling back to `accountId`.
+- `accountId`, `orgID`: optional strings; inside OpenCode only. OpenAI uses `accountId` (falling back to the token claim); Zen prefers `orgID`, falling back to `accountId`.
 - `refresh`, `expires`: optional source fields; never copied into a pseudo-connection or sent out of OpenCode. This feature does not refresh OAuth credentials.
 
-Read only the four selected integration credentials using the API established by T001. No credential field enters the bridge, cache, settings response, logs or UI.
+Read only the six selected integration credentials using the API established by T001; for `env` connections read only the named environment variable inside OpenCode. No credential field enters the bridge, cache, settings response, logs or UI.
 
 ## Pseudo-connection
 
 Ephemeral input to existing adapters:
 
-- `id`: one of the four stable bridge ids.
+- `id`: one of the six stable bridge ids.
 - `kind`: matching kind from BridgeProviderId.
 - `label`: matching display name.
 - `createdAt`: ISO date-time for the temporary object.
-- `secret`: only `apiKey?`, `accessToken?`, `accountId?`. Zen's resolved org id is placed in `secret.accountId`, and its adapter reads that exact location for `x-org-id`; Codex reads it for `ChatGPT-Account-Id`.
+- `secret`: only `apiKey?`, `accessToken?`, `accountId?`. Zen's resolved org id is placed in `secret.accountId`, and its adapter reads that exact location for `x-org-id`; OpenAI reads it for `ChatGPT-Account-Id`.
 
-Never persists. API-key-only Codex accounts do not fabricate ChatGPT quota; report the unsupported credential type explicitly.
+Never persists. API-key-only OpenAI accounts do not fabricate ChatGPT quota; report the unsupported credential type explicitly.
 
 ## ServerIdentity
 
@@ -61,7 +63,7 @@ Required fields:
 - `serverId`: ServerIdentity.serverId.
 - `port`: integer in `1..65535`, allocated service loopback port.
 - `token`: random 32-byte token regenerated each service start; bridge routes only.
-- `providers`: exactly the four OpenCode keys, unique.
+- `providers`: exactly the six OpenCode keys, unique.
 - `createdAt`: ISO date-time.
 
 Discovery directory: `$XDG_CONFIG_HOME/openchamber-quota/bridges/` (default `~/.config/...`) on POSIX; `%LOCALAPPDATA%\openchamber-quota\bridges\` on Windows. File: `<serverId>.json`. POSIX directory `0700` and file `0600`; Windows inherits the actual per-user ACL (administrators/SYSTEM may have access), with live permissions verification required rather than assuming privacy.
@@ -79,20 +81,20 @@ Canonical field constraints: `docs/contracts/quota-snapshot.schema.json#/$defs/p
 - `refreshing`: required boolean; false on completed bridge results.
 - `error`: optional sanitized `{ code, message, retryAt? }`; required for `state: "error"`. Missing credentials use `state: "unconfigured"`, `error.code: "not_configured"`, and no usage arrays.
 
-Bridge failure preserves the last successful windows/caps/balances/fetchedAt with an out-of-date notice. A provider never successfully read instead shows notice/error alone. Fresh provider authentication failure remains an auth error, not a successful zero reading. Preserve a separate last-success sample if later errors would otherwise erase it.
+Bridge failure preserves the last successful windows/caps/balances/fetchedAt with an out-of-date notice. A provider never successfully read instead shows one restart notice. Fresh provider authentication failure remains an auth error, not a successful zero reading; it is omitted from Quotas and shown in the Quota settings provider status table. Providers with no attempted credential are omitted from both surfaces. Preserve a separate last-success sample if later errors would otherwise erase it.
 
 ## BridgeState
 
 - `version`: literal `1`.
 - `serverId`: bound server identifier.
-- `providers`: exactly the four keys.
+- `providers`: exactly the six keys.
 - `refreshRequested`: boolean; true while one all-provider request is pending.
 - `requestId`: nonempty opaque string while pending, otherwise null. Concurrent manual/UI refreshes join the current request.
 - `deadlineAt`: epoch milliseconds while pending, otherwise null; admission time + BridgeTiming.refreshTimeoutMs.
 - `providerMinimums`: record containing a positive millisecond minimum for every declared provider; initial minimum is `300000` for each. No per-provider request filter exists.
 - `serverTime`: epoch milliseconds.
 
-An authenticated `/refresh` admits or joins one all-provider cycle. Cached responses still acknowledge that request. The service gates its own Tavily/custom HTTP calls with their schedulers; the plugin gates the four with its schedulers. Returning cache is not a reason to leave a request pending. Report times are not treated as new HTTP-attempt times.
+An authenticated `/refresh` admits or joins one all-provider cycle. The plugin schedules each of the six. Cached outcomes acknowledge the request without changing HTTP-attempt times.
 
 ## ProviderSchedule
 
@@ -104,7 +106,7 @@ One plugin scheduler per server/provider, shared by startup, autonomous timer, c
 - `retryAt`: epoch milliseconds or null, provider-requested backoff.
 - `inFlight`: runtime-only shared promise, never persisted.
 
-Every trigger calls the same decision function: join running work; fetch if eligible; otherwise return the cached/error/unconfigured state. Manual requests never bypass minimums or retryAt. Persist only lastAttemptAt/nextAllowedAt/retryAt in a server-bound nonsecret scheduling file/storage and restore on plugin restart. Do not persist credentials. T001/T025 ensure duplicate plugin contexts for one server do not create independent upstream loops; serialize ownership or fail closed until a single coordinator is selected.
+Every trigger calls the same decision function: join running work; fetch if eligible; otherwise return the cached/error/unconfigured state. Manual/event refreshes bypass the five-minute poll wait but not the 30-second floor or `retryAt`. Persist only lastAttemptAt/nextAllowedAt/retryAt in a server-bound nonsecret scheduling file/storage and restore on plugin restart. Do not persist credentials. T001/T025 ensure duplicate plugin contexts for one server do not create independent upstream loops; the coordinator lock records the provider set so an older build is taken over after an upgrade.
 
 ## BridgeSnapshot
 
@@ -112,7 +114,7 @@ Every trigger calls the same decision function: join running work; fetch if elig
 - `serverId`: matching selected server.
 - `requestId`: current request id for solicited results; null for autonomous results.
 - `generatedAt`: ISO date-time of assembly, not a replacement for sample timestamps.
-- `providers`: exactly four unique ProviderSnapshot entries, with every declared id/kind pair once. Each entry can be freshly fetched, cached, missing or failed. No subset payloads or credential fields are accepted.
+- `providers`: exactly six unique ProviderSnapshot entries, with every declared id/kind pair once. Each entry can be freshly fetched, cached, missing or failed. No subset payloads or credential fields are accepted.
 
 Validate atomically. Reject missing/duplicate/undeclared providers and mismatched serverId before replacing any data. A solicited result acknowledges its matching request even when all entries are cached or errors. A late old request must not clear a newer pending request or overwrite newer samples. Autonomous results do not accidentally acknowledge a manual request.
 
@@ -120,11 +122,11 @@ Validate atomically. Reject missing/duplicate/undeclared providers and mismatche
 
 - `version`: literal `1`.
 - `generatedAt`: required ISO date-time.
-- `providers`: required ordered ProviderSnapshot array, containing the four bridge entries plus configured Tavily/custom entries. Not necessarily six configured accounts; multiple custom connections remain allowed.
+- `providers`: required ordered ProviderSnapshot array containing the six bridge entries, which may include unconfigured providers.
 
 Canonical schema: `docs/contracts/quota-snapshot.schema.json`. Cache is service-owned and contains usage only; scheduling/cache metadata stays outside the strict response shape.
 
-Merge: validated complete bridge cycles update the four; service-owned Tavily/custom remain unchanged. After a service restart, restore post-upgrade last-success samples. Preserve stale values with `state: "ok"` and an optional sanitized notice error; never change fetchedAt on reuse. Fresh results clear stale notices. On missing credentials show `unconfigured`, not invented values.
+Merge: validated cycles update the six. Restore last-success samples after restart and label them historical until a valid bridge result arrives. Preserve eligible stale values and fetchedAt with a sanitized notice; fresh results clear it. Missing credentials remain `unconfigured`.
 
 ### Historical rendering
 
@@ -134,9 +136,12 @@ Render historical windows even after their old resetAt, but visibly label the sa
 
 One server-owned JSON document, `display.json` under `OPENCHAMBER_SERVICE_DATA_DIR`; no authoritative `host.storage` preferences.
 
-- `saved`: boolean, false until a user selection is saved; saved empty selections stay empty.
+- `saved`: boolean for the existing replacement-selection format; saved empty selections stay empty. Keyed edits preserve defaults for untouched providers.
 - `providers`: unique selected stable provider/connection ids.
+- `providerOrder`: unique provider ids in display order; unlisted providers append in discovery order.
 - `windows`: provider id → unique selected window ids; an explicit empty list is intentional.
+- `collapsedQuota`: provider id → a summary choice as defined in [the settings interface](../../docs/INTERFACES.md#implemented-server-settings-and-discovery).
+- `collapsedProviders`: collapsed provider IDs, persisted separately from the summary choice. Clients patch individual providers with boolean values.
 - `hiddenBalances`: unique provider ids.
 - `cutoffPercent`: finite number in `0..100`, default `10`.
 - `resetTime`: `"relative" | "absolute"`, default `relative`.
@@ -159,7 +164,7 @@ A first unavailable/missing entry can be encountered and default-enabled without
 ## SettingsPatch
 
 - `expectedRevision`: required nonnegative integer matching the SettingsEnvelope revision being edited.
-- `changes`: required nonempty object of allow-listed DisplaySelection field edits. Provider/window keyed changes preserve unrelated keys. Reject secrets, unknown fields and client edits to service-maintained encounter/initialization tracking.
+- `changes`: required nonempty object of allow-listed edits. `providerVisibility` maps provider IDs to booleans; `windowSelection` maps provider IDs to selected window IDs. Preserve unrelated keys. Reject unknown fields and client edits to service tracking.
 
 Validate both fields before writes. An explicit provider/window choice also updates its service-maintained explicit-choice tracking atomically; the client cannot spoof that tracking directly.
 
@@ -170,7 +175,7 @@ There are no external users, so migration of old development records or browser-
 ## Lifecycle
 
 1. Package permissions approved together → load supported server settings/cache without automatic clearing → publish owned server descriptor.
-2. Plugin binds to that server → all-provider cycle → one scheduler decision per provider → full four-entry result.
+2. Plugin binds to that server → all-provider cycle → one scheduler decision per provider → full six-entry result.
 3. UI refresh admits/joins one request → plugin discovers it on one-second poll → provider work completes or times out within ten seconds → complete result published → pending state cleared by twelve-second deadline.
-4. Plugin failure after approval → historical readings + notice, or notice alone; Tavily/custom continue. Package rejection/withdrawal → no service refresh until approval.
+4. Plugin failure after approval → historical readings with notice, or notice alone. Package rejection/withdrawal → no service refresh until approval.
 5. Shutdown → remove only owned discovery entry. Another server remains independent; clients of this same server share settings.

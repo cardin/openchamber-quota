@@ -12,24 +12,24 @@ Default to showing quota remaining. Users can choose to show quota used instead 
 
 When a post-upgrade reading is stale because the OpenCode plugin is unavailable, keep the last sampled bar/value with its age and an out-of-date notice, even after the old reset time. Do not recalculate an even-use estimate, invent a new reset, or claim that refreshing is running when it is not.
 
-> Provisional — feature `002-opencode-credential-handoff`: stale-reading implementation and verification are pending.
+> Provisional — feature `002-opencode-credential-handoff`: stale-reading behavior is implemented and fixture-tested; live plugin-outage verification remains.
 > See `specs/002-opencode-credential-handoff/spec.md`.
 <!-- provisional:feature=002-opencode-credential-handoff -->
 
 ## REQ 2
-The plugin must support these providers: providers that OpenCode supports, user-defined custom providers, and Tavily. Additional providers may be added later. A provider is in scope only when it exposes quota data the plugin can retrieve.
+The plugin must support OpenRouter, OpenCode Go, OpenCode Zen, OpenAI, Tavily and Exa through OpenCode. A provider is in scope only when it exposes quota data the plugin can retrieve. Exa credit data requires a Team Management service key.
 
-For providers that OpenCode supports, the plugin must obtain their credentials through the extension's approved OpenCode plugin. The plugin reads only the declared providers' credentials inside OpenCode, uses them to fetch usage, and sends only usage to the service; the service never reads either credential store, and no credential reaches the panel. For providers OpenCode doesn't support, the user enters a key in Quota settings.
+The approved plugin reads only the declared providers’ credentials inside OpenCode, including Tavily and Exa environment credentials. It sends only usage to the service. Quota settings accepts no keys for the six providers.
 
-Custom-provider setup is hidden in this release pending verification.
+A provider with no attempted credential is never listed in the Quotas section or in Quota settings; when none are signed in, the panel shows a sign-in hint. A provider whose credential fails authentication is also omitted from the panel. Its error is shown only in the Quota settings provider status table, which lists attempted providers, their setup source, their status, and any message. A plugin that has never connected shows one restart notice instead of provider rows.
 
-The OpenCode plugin and local service require approval of the package's complete permission list. A plugin load/reachability failure after approval leaves Tavily/custom working; rejecting or disabling the package instead prevents service refresh. Credentials for the four OpenCode providers are never copied to the service. Current Tavily/custom keys remain intentionally stored only by the service.
+OpenChamber’s Extensions settings disclose the local service and the plugin’s full OpenCode access before approval. If the plugin has not connected after approval, the panel and settings ask for an OpenCode or OpenChamber restart. A plugin outage keeps eligible last readings; rejecting or disabling the package prevents service refresh.
 
-Refresh always covers all providers. Each provider's scheduler chooses a fetch, cached result, or shared in-flight result according to its internal minimum and retry limits; manual refresh does not bypass these limits. Healthy local discovery targets one second, new provider work is bounded to ten seconds after discovery (including sequential fallbacks), and publication/timeout has a separate bounded allowance. These budgets do not promise successful fresh quota during a provider outage.
+Refresh always covers all providers. Each provider's scheduler chooses a fetch, cached result, or shared in-flight result according to its normal five-minute poll interval and retry limits. A manual refresh may bypass the normal poll wait but keeps a 30-second floor and honors the provider's `Retry-After`; repeated failures back off from one to fifteen minutes. Healthy local discovery targets one second, new provider work is bounded to ten seconds after discovery (including sequential fallbacks), and publication/timeout has a separate bounded allowance. These budgets do not promise successful fresh quota during a provider outage.
 
-There are no external users of this pre-release extension yet, so compatibility and migration of old development records are not required. This does not add automatic wiping on install, startup or upgrade. Supported Tavily/custom connections, settings and cache persist normally; any development-data reset is separate and manual. OpenCode logins must remain untouched.
+Old development data need not be migrated and must not be wiped automatically. Supported settings and usage cache persist across normal restarts and reloads. OpenCode logins must remain untouched.
 
-> Provisional — feature `002-opencode-credential-handoff`: the approved refresh, approval and persistence contracts are not implemented or verified yet.
+> Provisional — feature `002-opencode-credential-handoff`: refresh, approval and persistence behavior is implemented and automated checks pass; live plugin/provider checks remain.
 > See `specs/002-opencode-credential-handoff/spec.md`.
 <!-- provisional:feature=002-opencode-credential-handoff -->
 
@@ -37,10 +37,12 @@ There are no external users of this pre-release extension yet, so compatibility 
 The plugin must display its quota UI in OpenChamber's Session Panel.
 
 ## REQ 4
-Users must be able to choose which supported providers to display and, for each provider with multiple quota windows, which windows to display.
+Users must be able to choose which supported providers to display and, for each provider with multiple quota windows, which windows to display. They must be able to reorder and collapse providers in Quotas. A collapsed row shows one configured reading, including Tavily's reported pay-as-you-go usage, or an applicable window comparison (least remaining or earliest reset). Quota settings saves that choice.
 
-All clients connected to one OpenChamber server share Quota settings and connections. Different servers remain separate; settings are not specific to a UI window or client instance. First successful window data initializes defaults once, but an explicit provider hide or empty window choice made before data arrives is preserved.
+Quotas remembers which providers are collapsed or expanded when the panel or OpenChamber is reopened.
 
-> Provisional — feature `002-opencode-credential-handoff`: server-shared settings and first-success initialization are approved; implementation and concurrency checks are pending.
+All clients connected to one OpenChamber server share Quota settings. Different servers remain separate. First successful window data initializes defaults once and preserves explicit hides and empty window selections.
+
+> Provisional — feature `002-opencode-credential-handoff`: server-shared settings and first-success initialization are implemented and tested; live two-client verification remains.
 > See `specs/002-opencode-credential-handoff/spec.md`.
 <!-- provisional:feature=002-opencode-credential-handoff -->

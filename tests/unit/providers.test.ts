@@ -1,7 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import type { AdapterContext } from "../../src/providers/types.ts";
 import { DEFAULT_SELECTION, type ProviderKind, type StoredConnection } from "../../src/core/types.ts";
 import { customAdapter } from "../../src/providers/custom.ts";
@@ -10,15 +7,15 @@ import { openRouterAdapter } from "../../src/providers/openrouter.ts";
 import { openCodeGoAdapter } from "../../src/providers/opencode-go.ts";
 import { codexAdapter } from "../../src/providers/codex.ts";
 import { openCodeZenAdapter } from "../../src/providers/opencode-zen.ts";
-import { HttpError } from "../../src/service/http.ts";
+import { exaAdapter } from "../../src/providers/exa.ts";
+import { HttpError } from "../../src/core/http-error.ts";
 import { renderWindow } from "../../src/section/view/window.ts";
 import { customPayload, NOW, RESET } from "../fixtures/provider.ts";
 
-const context = (body: (url: string) => unknown, codexHome?: string): AdapterContext => ({
+const context = (body: (url: string) => unknown): AdapterContext => ({
   now: () => NOW,
   requestJson: async (url) => ({ status: 200, body: body(url) }),
   dataDir: "",
-  codexHome,
 });
 
 const connection = (
@@ -197,6 +194,24 @@ describe("provider adapters", () => {
     ]);
   });
 
+  test("opencode go does not call the usage fallback during a Console Retry-After", async () => {
+    const requested: string[] = [];
+    const retryAt = new Date(NOW + 300_000).toISOString();
+    const result = openCodeGoAdapter.fetch(
+      connection("opencode-go", { apiKey: "oc" }),
+      {
+        now: () => NOW,
+        dataDir: "",
+        requestJson: async (url) => {
+          requested.push(url);
+          throw new HttpError("rate_limited", "The provider is temporarily unavailable.", 503, retryAt);
+        },
+      },
+    );
+    await expect(result).rejects.toMatchObject({ code: "rate_limited", retryAt });
+    expect(requested).toEqual(["https://opencode.ai/console/api/go/status"]);
+  });
+
   test("opencode go keeps valid Console meters when the fallback is unavailable", async () => {
     const requested: string[] = [];
     const result = await openCodeGoAdapter.fetch(
@@ -291,24 +306,16 @@ describe("provider adapters", () => {
     ).rejects.toThrow("application/json");
   });
 
-  test("codex imports the CLI login and maps windows and credits", async () => {
-    const dir = await mkdtemp(path.join(os.tmpdir(), "codex-home-"));
-    await writeFile(
-      path.join(dir, "auth.json"),
-      JSON.stringify({ tokens: { access_token: "token", account_id: "acct" } }),
-    );
+  test("codex maps supplied ChatGPT windows and credits", async () => {
     const result = await codexAdapter.fetch(
-      connection("codex"),
-      context(
-        () => ({
-          rate_limit: {
-            primary_window: { used_percent: 20, limit_window_seconds: 18_000, reset_at: RESET },
-            secondary_window: { used_percent: 30, limit_window_seconds: 604_800, reset_at: RESET },
-          },
-          credits: { has_credits: true, balance: 3 },
-        }),
-        dir,
-      ),
+      connection("codex", { accessToken: "token", accountId: "acct" }),
+      context(() => ({
+        rate_limit: {
+          primary_window: { used_percent: 20, limit_window_seconds: 18_000, reset_at: RESET },
+          secondary_window: { used_percent: 30, limit_window_seconds: 604_800, reset_at: RESET },
+        },
+        credits: { has_credits: true, balance: 3 },
+      })),
     );
     expect(result.windows).toHaveLength(2);
     expect(result.windows[0].remainingPercent).toBe(80);
@@ -317,7 +324,7 @@ describe("provider adapters", () => {
 
   test("codex uses reset_after_seconds and ignores credits the account does not have", async () => {
     const result = await codexAdapter.fetch(
-      connection("codex", { accessToken: "token" }),
+      connection("codex", { accessToken: "token", accountId: "acct" }),
       context(() => ({
         rate_limit: {
           primary_window: {
@@ -335,7 +342,7 @@ describe("provider adapters", () => {
 
   test("codex adds a monthly spend window when no rate-limit month exists", async () => {
     const result = await codexAdapter.fetch(
-      connection("codex", { accessToken: "token" }),
+      connection("codex", { accessToken: "token", accountId: "acct" }),
       context(() => ({
         rate_limit: {
           primary_window: { used_percent: 10, limit_window_seconds: 18_000, reset_at: RESET },
@@ -346,10 +353,10 @@ describe("provider adapters", () => {
     expect(result.windows.find((window) => window.id === "spend-monthly")?.remainingPercent).toBe(40);
   });
 
-  test("codex surfaces a rejected login", async () => {
+  test("codex surfaces a rejected sign-in without leaking the token", async () => {
     await expect(
       codexAdapter.fetch(
-        connection("codex", { accessToken: "token" }),
+        connection("codex", { accessToken: "sentinel-token", accountId: "acct" }),
         {
           ...context(() => ({})),
           requestJson: async () => {
@@ -357,7 +364,115 @@ describe("provider adapters", () => {
           },
         },
       ),
-    ).rejects.toThrow("Codex login was rejected");
+    ).rejects.toThrow("Sign in again in OpenCode");
+  });
+
+  test("codex requires an OpenCode token and account id, never the CLI file", async () => {
+    await expect(
+      codexAdapter.fetch(connection("codex", { apiKey: "sk-only" }), context(() => ({}))),
+    ).rejects.toThrow("API keys cannot read ChatGPT quota");
+    await expect(
+      codexAdapter.fetch(connection("codex", { accessToken: "token" }), context(() => ({}))),
+    ).rejects.toThrow("needs an account id");
+  });
+
+  test("codex sends the account id in ChatGPT-Account-Id", async () => {
+    let header: string | undefined;
+    await codexAdapter.fetch(connection("codex", { accessToken: "token", accountId: "acct" }), {
+      ...context(() => ({})),
+      requestJson: async (_url, options) => {
+        header = options.headers?.["ChatGPT-Account-Id"];
+        return {
+          status: 200,
+          body: {
+            rate_limit: {
+              primary_window: { used_percent: 10, limit_window_seconds: 18_000, reset_at: RESET },
+            },
+          },
+        };
+      },
+    });
+    expect(header).toBe("acct");
+  });
+
+  test("openrouter, Go and Zen accept an OAuth access token", async () => {
+    const authHeader = (options: { headers?: Record<string, string> } | undefined) =>
+      options?.headers?.Authorization;
+    const headers: string[] = [];
+    const capture = async (url: string, options?: { headers?: Record<string, string> }) => {
+      headers.push(`${url} ${authHeader(options)}`);
+      if (url.includes("openrouter")) return { status: 200, body: { data: { usage_monthly: 1 } } };
+      if (url.includes("/console/api/go/status")) return { status: 200, body: {} };
+      if (url.includes("/zen/go/v1/usage")) {
+        return { status: 200, body: { usage: { rolling: { percent: 1, resetsAt: RESET } } } };
+      }
+      if (url.includes("/usage/models")) return { status: 200, body: { requests: 1 } };
+      return { status: 200, body: [] };
+    };
+    await openRouterAdapter.fetch(connection("openrouter", { accessToken: "oat" }), {
+      ...context(() => ({})),
+      requestJson: capture,
+    });
+    await openCodeGoAdapter.fetch(connection("opencode-go", { accessToken: "oat" }), {
+      ...context(() => ({})),
+      requestJson: capture,
+    });
+    await openCodeZenAdapter.fetch(connection("opencode-zen", { accessToken: "oat" }), {
+      ...context(() => ({})),
+      requestJson: capture,
+    });
+    expect(headers.every((line) => line.endsWith("Bearer oat"))).toBe(true);
+  });
+
+  test("zen reads x-org-id from secret.accountId", async () => {
+    let org: string | undefined;
+    await openCodeZenAdapter.fetch(
+      connection("opencode-zen", { apiKey: "key", accountId: "org-1" }),
+      {
+        ...context(() => ({})),
+        requestJson: async (_url, options) => {
+          org = options.headers?.["x-org-id"];
+          return { status: 200, body: { requests: 1 } };
+        },
+      },
+    );
+    expect(org).toBe("org-1");
+  });
+
+  test("exa maps the team credit balance and expiring credits", async () => {
+    const result = await exaAdapter.fetch(connection("exa", { apiKey: "exa-key" }), {
+      ...context(() => ({})),
+      requestJson: async (_url, options) => {
+        expect(options.headers?.["x-api-key"]).toBe("exa-key");
+        return {
+          status: 200,
+          body: {
+            credits_usd: 42.5,
+            expiring_credits: [{ amount_usd: 10, expires_at: RESET }],
+          },
+        };
+      },
+    });
+    expect(result.windows).toHaveLength(0);
+    expect(result.caps).toHaveLength(0);
+    expect(result.balances[0]).toEqual({
+      id: "credits",
+      label: "Credits",
+      value: 42.5,
+      unit: "USD",
+    });
+    expect(result.balances[1]?.value).toBe(10);
+  });
+
+  test("exa reports a normal search key as a credential error", async () => {
+    await expect(
+      exaAdapter.fetch(connection("exa", { apiKey: "search-key" }), {
+        ...context(() => ({})),
+        requestJson: async () => {
+          throw new HttpError("auth", "rejected", 401);
+        },
+      }),
+    ).rejects.toThrow("Team Management service key");
   });
 
   test("zen surfaces an auth failure", async () => {
@@ -372,6 +487,33 @@ describe("provider adapters", () => {
         },
       ),
     ).rejects.toThrow("rejected");
+  });
+
+  test("Zen omits an unreported request count and avoids account IDs in labels", async () => {
+    const result = await openCodeZenAdapter.fetch(connection("opencode-zen", { apiKey: "key" }), {
+      now: () => NOW,
+      dataDir: "",
+      requestJson: async (url) => ({
+        status: 200,
+        body: url.includes("/budgets/")
+          ? [{ serviceAccountId: "internal-account-id", spentMicroCents: 0, limitMicroCents: 100 }]
+          : { items: [{}] },
+      }),
+    });
+    expect(result.balances).toEqual([]);
+    expect(result.caps[0].label).toBe("Budget 1");
+  });
+
+  test("Zen forwards the budget rate limit even after usage succeeds", async () => {
+    const limited = new HttpError("rate_limited", "Rate limited.", 429, RESET);
+    await expect(openCodeZenAdapter.fetch(connection("opencode-zen", { apiKey: "key" }), {
+      now: () => NOW,
+      dataDir: "",
+      requestJson: async (url) => {
+        if (url.includes("/budgets/")) throw limited;
+        return { status: 200, body: { requests: 0 } };
+      },
+    })).rejects.toBe(limited);
   });
 
   test("zen maps requests and budget caps", async () => {

@@ -2,19 +2,19 @@
 
 ## Plugin-only quota acquisition
 
-**Decision:** Quotas is the sole extension display. The plugin uses four selected OpenCode credentials inside OpenCode and sends quota readings only; no Usage-area contribution or manual-key fallback for the four.
+**Decision:** Quotas is the sole extension display. The plugin uses six selected OpenCode credentials inside OpenCode and sends quota readings only; no Usage-area contribution or manual-key fallback for those six.
 
 **Rationale:** Users intend to hide Usage and retain Quotas. Acquisition must not depend on Usage visibility. Credentials need not cross the plugin/service channel.
 
 **Alternatives considered:** Native quota role (visibility-dependent source and duplicate UI); second stored keys (rejected); service-side credential scans (too broad).
 
-**Evidence boundary:** Plugin feasibility remains T001, not a completed proof. OpenCode's published server-plugin guide describes `integration.connection.active(integrationID)` and `resolve(connection)`; use these for selected integration credentials only after verifying the installed baseline and entry contract. Do not scan the entire credential store. The four intended ids are openrouter, opencode-go, opencode and openai; actual Go/Zen integration sharing is a baseline verification item.
+**Evidence boundary:** Plugin feasibility remains T001, not a completed proof. OpenCode's published server-plugin guide describes `integration.connection.active(integrationID)` and `resolve(connection)`; use these for selected integration credentials only after verifying the installed baseline and entry contract. Do not scan the entire credential store. The six intended ids are openrouter, opencode-go, opencode, openai, tavily and exa; actual Go/Zen integration sharing and the Tavily/Exa environment forms are baseline verification items.
 
 ## All-provider cycle with per-provider scheduling
 
-**Decision:** Refresh is always all providers. Every four-provider trigger uses the same scheduler/coordinator; all results contain four entries. Eligible providers fetch, blocked providers return cache/error/missing, and running providers share their promise. No manual override of minimums or retryAt.
+**Decision:** Refresh is always all providers. Every six-provider trigger uses the same scheduler/coordinator; all results contain six entries. Eligible providers fetch, blocked providers return cache/error/missing, and running providers share their promise. No manual override of minimums or retryAt.
 
-**Rationale:** The user rejected provider-specific requests. Fetching an entire payload does not mean making four new upstream requests. Cached entries still acknowledge the cycle and retain actual sample time.
+**Rationale:** The user rejected provider-specific requests. Fetching an entire payload does not mean making six new upstream requests. Cached entries still acknowledge the cycle and retain actual sample time.
 
 **Alternatives considered:** Subset request/result patches (rejected scope); rejecting every refresh within a global minimum (leaves all-provider acknowledgement unclear); independent timer/manual loops (duplicate work).
 
@@ -28,7 +28,7 @@
 
 ## Server-shared settings and safe discovery
 
-**Decision:** One `display.json` and Tavily/custom connection store per OpenChamber server's extension data directory. Clients read/persist through the service, with revision conflicts and keyed patches preventing lost unrelated changes. No authoritative browser instance selection. Canonical service data-directory hash is serverId; discovery file is `<serverId>.json`, ownership-checked on cleanup.
+**Decision:** One `display.json` per OpenChamber server. Revision conflicts and keyed patches protect independent settings changes. The canonical service data-directory hash identifies the server and its ownership-checked `<serverId>.json` descriptor.
 
 **Rationale:** User wants clients of one server to share settings. Distinct servers or plugin locations must not overwrite discovery or silently receive another server's quotas. Explicit binding or a sole verified endpoint is required. If several endpoints exist without a selector, stop instead of guessing.
 
@@ -46,7 +46,7 @@
 
 ## Zen credential identifier
 
-**Decision:** Resolve Zen `orgID` first (accountId fallback) inside OpenCode into `Pseudo-connection.secret.accountId`; the Zen adapter reads the same secret field for x-org-id. Codex resolves its accountId into the same field for ChatGPT-Account-Id.
+**Decision:** Resolve Zen `orgID` first (accountId fallback) inside OpenCode into `Pseudo-connection.secret.accountId`; the Zen adapter reads the same secret field for x-org-id. OpenAI resolves its accountId (or the access-token `chatgpt_account_id` claim) into the same field for ChatGPT-Account-Id.
 
 **Rationale:** Existing Zen adapter read connection.accountId while the mapping wrote secret.accountId. Cover credential mapping → adapter → actual header in one test, not isolated mocks.
 
@@ -60,12 +60,26 @@
 
 ## Historical display and pre-release compatibility
 
-**Decision:** Supported cache preserves last successful samples across outages/restarts. Render them with age, even after old resetAt, without live estimate or false refreshing. Because there are no external users, old development records need no compatibility or migration path. Do not implement automatic wiping, startup reset or a storage epoch. Any developer cleanup is separate and manual; OpenCode logins are untouched. Supported Tavily/custom keys remain intentionally stored in the service.
+**Decision:** Cache preserves eligible last samples through outages and restarts. Show age without a live estimate or false refresh. Old development data needs no migration or automatic reset. OpenCode logins are untouched.
 
-**Rationale:** The user clarified that the earlier legacy comment meant no backward-compatibility obligation, not a product requirement to wipe data. Secret checks forbid new OpenCode credential copies and all secrets in outputs, not the intentional Tavily/custom key file. Normal startup/reload must preserve supported state.
+**Rationale:** Pre-release compatibility is optional; automatic deletion is outside scope. Supported settings and cache persist, and provider credentials stay in OpenCode.
 
 **Alternatives considered:** Dropping old bars at expiry (loses historical sample); treating stale quota as current (misleading); legacy migration machinery (unnecessary pre-release); automatic data wipe (not requested); deleting OpenCode auth (out of scope).
 
+## T001 feasibility findings (2026-11-25)
+
+**Baseline inspected:** OpenCode 2.4.1 (`~/.opencode/bin/opencode`). The binary contains the V2 plugin surface (`PluginContext`, `integration.connection`); `@opencode-ai/plugin@1.18.25` types declare `setup(ctx)` with `ctx.options` and `ctx.integration.connection.active(id)` / `resolve(connection)`. A disposable self-contained bundle (`bun build --target node --format esm`) default-exporting `{ id, setup }` was executed against a fixture context: only the four originally declared ids were queried in that disposable check; the current scope adds Tavily and Exa, `key`/`oauth` credentials resolved, `fetch`/`AbortController` were present, setup cleanup ran, and an explicit option arrived in `ctx.options`.
+
+**Credential shapes:** V2 `resolve` returns `CredentialKey { type: "key", key, metadata? }` or `CredentialOAuth { type: "oauth", access, refresh, expires, methodID, metadata? }`. The installed 2.4.1 credential store still labels key credentials `type: "api"`, so mapping accepts both `key` and `api`. Observed store keys: `openrouter`, `opencode-go`, `openai` (OAuth with top-level `accountId`); no `opencode` (Zen) credential exists on this machine, so Zen's id and org field remain unverified live. `refresh`/`expires` are never copied.
+
+**Options and binding:** `contributes.opencodePlugin` is delivered as a folder path in OpenChamber's managed OpenCode config (SDK `DOCUMENTATION.md`). OpenCode 2.4.1 accepts `{ package, options }` plugin entries, but the host writes a plain path, so `bridgeServerId` cannot be assumed. The plugin honours `ctx.options.bridgeServerId` when present and otherwise binds only to a sole verified live descriptor; several descriptors are selection-required, never arbitrary.
+
+**Multiple locations:** setup is per plugin instance/location; the host does not guarantee one instance per server. A server-bound lock file with heartbeat serializes one coordinator; followers fail closed and never fetch upstream.
+
+**Credential events:** the plugin uses the V2 `credential.updated` and `credential.switched` events when available, filtered to the six integrations. Eligible timer and manual fetches also re-resolve the credential.
+
+**Remaining live gaps:** a real OpenCode load of this extension's plugin, Zen's orgID location, live upstream calls, Windows ACLs and authorization dialogs are checked in T055. Scoped acquisition, safe sole-descriptor binding and single-coordinator ownership were available, so T001 does not stop implementation.
+
 ## Remaining verification, not open product decisions
 
-T001 feasibility/server binding, correct OAuth/API provider endpoints and org mapping, actual Windows ACLs, deadline cancellation, and live all-provider refresh remain unverified until implementation. No completed tests, approval dialogs or working plugin are claimed here. These are implementation gates, not user clarifications silently resolved by assumption.
+Live all-provider refresh, actual Windows ACLs and deadline cancellation under real network stalls remain unverified until implementation and T055. No completed tests, approval dialogs or working plugin are claimed here. These are implementation gates, not user clarifications silently resolved by assumption.

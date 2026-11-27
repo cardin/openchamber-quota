@@ -1,9 +1,7 @@
-import { readFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import type { Adapter } from "./types.ts";
+import { PROVIDER_MIN_INTERVAL_MS } from "../core/bridge.ts";
 import { asNumber, asRecord, toIso } from "./parse.ts";
-import { HttpError } from "../service/http.ts";
+import { HttpError } from "../core/http-error.ts";
 import type { Balance, QuotaWindow } from "../core/types.ts";
 
 const labelFor = (seconds: number | null): string => {
@@ -12,21 +10,6 @@ const labelFor = (seconds: number | null): string => {
   if (seconds <= 8 * 86_400) return "7d";
   if (seconds <= 32 * 86_400) return "30d";
   return `${Math.round(seconds / 86_400)}d`;
-};
-
-const readCodexLogin = async (codexHome: string): Promise<{ accessToken: string; accountId?: string } | null> => {
-  try {
-    const raw = JSON.parse(await readFile(path.join(codexHome, "auth.json"), "utf8")) as {
-      tokens?: { access_token?: unknown; account_id?: unknown };
-    };
-    if (typeof raw.tokens?.access_token !== "string" || !raw.tokens.access_token) return null;
-    return {
-      accessToken: raw.tokens.access_token,
-      accountId: typeof raw.tokens.account_id === "string" ? raw.tokens.account_id : undefined,
-    };
-  } catch {
-    return null;
-  }
 };
 
 const resetAtFor = (entry: Record<string, unknown>, now: number): string | null => {
@@ -61,24 +44,39 @@ const parseWindow = (value: unknown, index: number, now: number): QuotaWindow | 
 
 export const codexAdapter: Adapter = {
   kind: "codex",
-  minIntervalMs: 5 * 60_000,
+  minIntervalMs: PROVIDER_MIN_INTERVAL_MS,
   fetch: async (connection, context) => {
-    const imported = connection.secret.accessToken
-      ? { accessToken: connection.secret.accessToken, accountId: connection.secret.accountId }
-      : await readCodexLogin(context.codexHome ?? path.join(os.homedir(), ".codex"));
-    if (!imported) throw new HttpError("not_configured", "No OpenAI / Codex login was found. Run `codex login`.");
+    const accessToken = connection.secret.accessToken;
+    const accountId = connection.secret.accountId;
+    if (!accessToken) {
+      throw new HttpError(
+        "not_configured",
+        "Sign in to OpenAI in OpenCode. API keys cannot read ChatGPT quota.",
+      );
+    }
+    if (!accountId) {
+      throw new HttpError(
+        "not_configured",
+        "OpenAI needs an account id. Sign in to OpenAI in OpenCode, then refresh.",
+      );
+    }
     const headers: Record<string, string> = {
       Accept: "application/json",
-      Authorization: `Bearer ${imported.accessToken}`,
+      Authorization: `Bearer ${accessToken}`,
+      "ChatGPT-Account-Id": accountId,
       "User-Agent": "OpenChamber quota display",
     };
-    if (imported.accountId) headers["ChatGPT-Account-Id"] = imported.accountId;
     const response = await context.requestJson("https://chatgpt.com/backend-api/wham/usage", {
       headers,
-      timeoutMs: 15_000,
+      timeoutMs: 10_000,
+      deadlineAt: context.deadlineAt,
+      signal: context.signal,
     }).catch((error: unknown) => {
       if (error instanceof HttpError && error.code === "auth") {
-        throw new HttpError("auth", "OpenAI / Codex login was rejected. Run `codex login` and try again.");
+        throw new HttpError(
+          "auth",
+          "OpenAI rejected the sign-in. Sign in again in OpenCode, then refresh.",
+        );
       }
       throw error;
     });

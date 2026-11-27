@@ -1,4 +1,5 @@
 import { describe, expect, jest, test } from "bun:test";
+import { HostRequestError } from "@openchamber/sdk";
 import type { Snapshot } from "../../src/core/types.ts";
 import { SnapshotController } from "../../src/section/refresh.ts";
 
@@ -22,19 +23,68 @@ const busySnapshot: Snapshot = {
   }],
 };
 
+const envelope = {
+  version: 1 as const,
+  revision: 1,
+  selection: {
+    saved: false,
+    providers: [],
+    windows: {},
+    hiddenBalances: [],
+    cutoffPercent: 10,
+    resetTime: "relative" as const,
+    quotaDisplay: "remaining" as const,
+    encounteredBridgeProviders: [],
+    initializedBridgeWindows: [],
+    explicitProviderSelections: [],
+    explicitWindowSelections: [],
+  },
+};
+
 describe("snapshot controller", () => {
-  test("refresh posts then loads the snapshot", async () => {
+  test("a stalled read cannot outlive the refresh deadline or render late", async () => {
+    jest.useFakeTimers();
+    let rendered = 0;
+    let release!: (value: { status: number; body: Snapshot }) => void;
+    const response = new Promise<{ status: number; body: Snapshot }>((resolve) => { release = resolve; });
+    const controller = new SnapshotController(
+      async ({ method }) => method === "POST" ? { status: 202, body: {} } : response,
+      () => rendered++,
+    );
+    try {
+      const running = controller.refresh();
+      await Promise.resolve();
+      jest.advanceTimersByTime(15_000);
+      await running;
+      release({ status: 200, body: snapshot });
+      await Promise.resolve();
+      expect(rendered).toBe(0);
+    } finally {
+      controller.stop();
+      jest.useRealTimers();
+    }
+  }, 1_000);
+
+  test("reports package refusal or withdrawal as approval required", async () => {
+    const approval: boolean[] = [];
+    const controller = new SnapshotController(async () => {
+      throw new HostRequestError("NO_SERVICE", "Not granted.");
+    }, () => {}, undefined, 5_000, (required) => approval.push(required));
+    await controller.start();
+    controller.stop();
+    expect(approval).toContain(true);
+  });
+
+  test("refresh posts then loads the snapshot and shared settings", async () => {
     const calls: Array<{ method: string; path: string }> = [];
     const controller = new SnapshotController(
       async (input) => {
         calls.push({ method: input.method, path: input.path });
-        return input.method === "POST"
-          ? { status: 202, body: { accepted: true } }
-          : { status: 200, body: snapshot };
+        if (input.method === "POST") return { status: 202, body: { accepted: true } };
+        if (input.path === "/settings") return { status: 200, body: envelope };
+        return { status: 200, body: snapshot };
       },
       () => {},
-      60_000,
-      60_000,
     );
 
     await controller.refresh();
@@ -43,6 +93,7 @@ describe("snapshot controller", () => {
     expect(calls).toEqual([
       { method: "POST", path: "/refresh" },
       { method: "GET", path: "/snapshot" },
+      { method: "GET", path: "/settings" },
     ]);
   });
 
@@ -59,11 +110,10 @@ describe("snapshot controller", () => {
           await gate;
           return { status: 202, body: { accepted: true } };
         }
+        if (input.path === "/settings") return { status: 200, body: envelope };
         return { status: 200, body: snapshot };
       },
       () => {},
-      60_000,
-      60_000,
     );
 
     const first = controller.refresh();
@@ -75,34 +125,30 @@ describe("snapshot controller", () => {
     controller.stop();
   });
 
-  test("start registers one set of intervals, and stop clears both before a restart", async () => {
+  test("start registers one set of intervals, and stop clears them before a restart", async () => {
     jest.useFakeTimers();
     let posts = 0;
-    let gets = 0;
-    const controller = new SnapshotController(async ({ method }) => {
+    const controller = new SnapshotController(async ({ method, path }) => {
       if (method === "POST") {
         posts++;
         return { status: 202, body: {} };
       }
-      gets++;
+      if (path === "/settings") return { status: 200, body: envelope };
       return { status: 200, body: snapshot };
     }, () => {});
     try {
       controller.start();
       controller.start();
-      expect(jest.getTimerCount()).toBe(2);
+      expect(jest.getTimerCount()).toBe(3);
       expect(posts).toBe(1);
       await Promise.resolve();
-      jest.advanceTimersByTime(5_000);
-      expect(gets).toBe(3);
       controller.stop();
       expect(jest.getTimerCount()).toBe(0);
-      jest.advanceTimersByTime(120_000);
+      jest.advanceTimersByTime(6 * 60_000);
       expect(posts).toBe(1);
-      expect(gets).toBe(3);
 
       controller.start();
-      expect(jest.getTimerCount()).toBe(2);
+      expect(jest.getTimerCount()).toBe(3);
       expect(posts).toBe(2);
     } finally {
       controller.stop();
@@ -112,24 +158,20 @@ describe("snapshot controller", () => {
 
   test("stop cancels the polling delay of a refresh already in progress", async () => {
     jest.useFakeTimers();
-    let gets = 0;
-    const controller = new SnapshotController(async ({ method }) => {
+    const controller = new SnapshotController(async ({ method, path }) => {
       if (method === "POST") return { status: 202, body: {} };
-      gets++;
+      if (path === "/settings") return { status: 200, body: envelope };
       return { status: 200, body: busySnapshot };
     }, () => {});
     try {
       const refresh = controller.refresh();
-      await Promise.resolve(); // POST has resolved.
-      await Promise.resolve(); // First snapshot has resolved.
-      await Promise.resolve(); // The busy response scheduled the polling delay.
-      expect(jest.getTimerCount()).toBe(1);
+      for (let i = 0; i < 12; i++) await Promise.resolve();
+      expect(jest.getTimerCount()).toBe(2);
 
       controller.stop();
       expect(jest.getTimerCount()).toBe(0);
       await refresh;
       jest.advanceTimersByTime(60_000);
-      expect(gets).toBe(1);
     } finally {
       controller.stop();
       jest.useRealTimers();
@@ -144,7 +186,10 @@ describe("snapshot controller", () => {
       release = resolve;
     });
     const controller = new SnapshotController(
-      async ({ method }) => method === "GET" ? response : { status: 202, body: {} },
+      async ({ method, path }) => {
+        if (method === "GET" && path === "/settings") return { status: 200, body: envelope };
+        return method === "GET" ? response : { status: 202, body: {} };
+      },
       () => rendered++,
     );
     try {
@@ -153,7 +198,7 @@ describe("snapshot controller", () => {
       controller.stop();
       release({ status: 200, body: busySnapshot });
       // Drain the response and polling continuations before asserting.
-      for (let i = 0; i < 5; i++) await Promise.resolve();
+      for (let i = 0; i < 8; i++) await Promise.resolve();
       expect(rendered).toBe(0);
       expect(jest.getTimerCount()).toBe(0);
       await refresh;

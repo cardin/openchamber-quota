@@ -6,7 +6,7 @@ Intended, not implemented. Models and exact field constraints are in [data-model
 
 Keep `statusSection`, `page`, and the existing `service`. Add `contributes.opencodePlugin: "src/opencode-plugin"`; no `service.provides: ["quota"]`, no `contributes.quota`, no `/quota` route. The bundle uses the plugin lifecycle verified by T001 and carries no installed-package dependency at runtime.
 
-OpenChamber asks for the package's whole permission list, including service and full-access plugin execution. Plugin code or folder changes alone do not trigger reapproval; additions to permissions do. README discloses the four providers before approval; Quota settings repeats that after approval. Rejecting the package blocks service refresh. A plugin load/connectivity failure after approval leaves Tavily/custom usable.
+OpenChamber’s Extensions settings discloses the service and the plugin’s full access before whole-package approval. Code-only and folder-only changes do not require reapproval; added permissions do. Quota settings shows setup guidance and status. Refusal blocks refresh; a plugin outage preserves eligible last readings.
 
 ## Server binding and descriptor
 
@@ -20,7 +20,7 @@ UI routes use the existing host-injected service bearer through `host.serviceReq
 
 ## All-provider refresh
 
-`POST /refresh` accepts no provider id, connectionId or provider filter. Empty body/`{}` starts or joins an all-provider cycle; filter fields return 400. The response is `202 { accepted: true, requestId, deadlineAt }`. Concurrent UI refreshes share requestId. Service-owned Tavily/custom and plugin-owned four each apply their internal per-provider limits. Cached data is a valid result, not a forced HTTP fetch.
+`POST /refresh` accepts an empty body or `{}` and no query parameters. Options return 400. It starts or joins a cycle and returns `202 { accepted: true, requestId, deadlineAt }`. Cached results can acknowledge the request.
 
 `GET /bridge/state` returns BridgeState:
 
@@ -28,11 +28,11 @@ UI routes use the existing host-injected service bearer through `host.serviceReq
 {
   "version": 1,
   "serverId": "server-data-directory-hash",
-  "providers": ["openrouter", "opencode-go", "opencode", "openai"],
+  "providers": ["openrouter", "opencode-go", "opencode", "openai", "tavily", "exa"],
   "refreshRequested": true,
   "requestId": "refresh-opaque-id",
   "deadlineAt": 1790000012000,
-  "providerMinimums": {"openrouter": 300000, "opencode-go": 300000, "opencode": 300000, "openai": 300000},
+  "providerMinimums": {"openrouter": 300000, "opencode-go": 300000, "opencode": 300000, "openai": 300000, "tavily": 300000, "exa": 300000},
   "serverTime": 1790000000000
 }
 ```
@@ -43,28 +43,28 @@ All triggers use the same plugin scheduler per server/provider. Join in-flight w
 
 ## `POST /bridge/snapshot`
 
-Body is BridgeSnapshot: `{ version: 1, serverId, requestId, generatedAt, providers }`. `providers` must contain exactly four unique entries matching BridgeProviderId; no subset payloads. Solicited requestId matches the request being answered; autonomous publication uses null. Accept/reject the complete payload atomically, then update the four and retain service-owned Tavily/custom.
+Body is BridgeSnapshot: `{ version: 1, serverId, requestId, generatedAt, providers }`. `providers` must contain exactly six unique entries matching BridgeProviderId. Solicited requestId matches the request being answered; autonomous publication uses null. Accept or reject the complete payload atomically.
 
 Entries use canonical ProviderSnapshot fields. Each entry may be freshly fetched, cached, unconfigured or error. A missing credential gives `state: "unconfigured"`, empty usage arrays and sanitized not_configured guidance. Provider errors do not invent zero values. Cached entries retain fetchedAt. Payloads cannot include a secret, credential, endpoint, account id or raw upstream body.
 
-Return `200 { accepted: true, requestId }` for a valid payload. Wrong auth → 401; invalid/missing/duplicate provider or wrong server → 400. A late solicited request cannot clear a later request or overwrite newer samples; reject obsolete publication without changing current state. Completing all four as cached/error still clears the matching pending flag. Autonomous reports do not clear unrelated pending requests.
+Return `200 { accepted: true, requestId }` for a valid payload. Wrong auth → 401; invalid/missing/duplicate provider or wrong server → 400. A late solicited request cannot clear a later request or overwrite newer samples; reject obsolete publication without changing current state. Completing all six as cached/error still clears the matching pending flag. Autonomous reports do not clear unrelated pending requests.
 
 ## Shared settings
 
-`GET /settings` returns SettingsEnvelope. `PATCH /settings` accepts expectedRevision plus allow-listed field changes; no secret fields. Serialize writes. Conflicts return 409 with current envelope so the UI reapplies the intended edit rather than an outdated whole selection. Preferences, provider/window selection and current Tavily/custom connections are shared by all clients of the same server; different servers retain separate data. Service performs first-success window initialization once while preserving prior explicit choices.
+`GET /settings` returns SettingsEnvelope. `PATCH /settings` accepts expectedRevision plus allow-listed changes, including keyed `providerVisibility` and `windowSelection`. A 409 returns the current envelope so the client can reapply the intended edit. The server initializes windows on first success without overwriting explicit choices.
 
 ## Historical data
 
-Cache post-upgrade last-success usage only. Bridge timeout/unavailability retains that sample with its age and an out-of-date notice. Even after resetAt passes, render the historical number/bar, not endless "refreshing", a fabricated new reset or a recalculated even-use estimate. A never-read provider shows notice alone. Package rejection is approval-required, not an independently functioning Tavily/custom service.
+Cache post-upgrade last-success usage only. A bridge outage retains eligible samples with their age and a notice. After resetAt, show the historical reading without a fabricated reset, live estimate or false refreshing claim. If the bridge never connected, show a notice alone. Package refusal requires approval.
 
 ## Pre-release compatibility and secret checks
 
-Old development formats need no migration because there are no external users yet. There is no automatic wipe, storage-epoch reset or startup deletion. Preserve supported Tavily/custom connections, server settings and cache across normal restarts/reloads. Old local preferences are no longer authoritative but are not deleted automatically. Manual developer cleanup is separate from this feature; OpenCode logins are never touched.
+Old development data need not be migrated. Preserve server settings and usage cache through restarts and reloads; do not wipe data automatically or modify OpenCode logins.
 
-Tavily/custom keys are allowed only in connections.json. New copies of the four OpenCode credentials are forbidden anywhere outside OpenCode. Usage payloads, responses, logs and UI contain no secrets. Bridge tokens are allowed only in the protected descriptor and authenticated requests, never displayed or logged.
+The six provider credentials stay in OpenCode. Usage payloads, responses, logs and UI contain no secrets. The bridge token appears only in its protected descriptor and authenticated requests.
 
 ## Route inventory
 
-- UI bearer: `/health`, `/snapshot`, `/refresh`, `/settings`, existing Tavily/custom connection CRUD/test.
+- UI bearer: `/health`, `/snapshot`, `/refresh`, `/settings`.
 - Bridge bearer: `/bridge/state`, `/bridge/snapshot`.
-- No `/quota`, no provider-targeted refresh, no old OpenCode-key connection CRUD. New writes for the four are rejected rather than silently stored.
+- No `/quota`, no provider-targeted refresh, no old OpenCode-key connection CRUD. New writes for the six OpenCode-backed providers are rejected rather than silently stored.

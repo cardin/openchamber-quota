@@ -2,7 +2,8 @@ import type { ProviderKind } from "./types.ts";
 
 export const PROVIDER_LABELS: Record<ProviderKind, string> = {
   custom: "Custom provider",
-  codex: "OpenAI / Codex",
+  codex: "OpenAI",
+  exa: "Exa",
   "opencode-go": "OpenCode Go",
   "opencode-zen": "OpenCode Zen",
   openrouter: "OpenRouter",

@@ -4,9 +4,9 @@
 
 ## Summary
 
-Retain the separate Quotas UI for all six provider categories. An OpenCode plugin reads only OpenRouter, OpenCode Go, Zen and Codex credentials, fetches quota inside OpenCode and sends secret-free readings to the existing service. No Usage-area contribution or stored-key fallback. Refresh always means all providers: internal per-provider schedulers decide whether to fetch, return cache or join running work.
+Retain the separate Quotas UI for all six provider categories. An OpenCode plugin reads only OpenRouter, OpenCode Go, Zen, OpenAI, Tavily and Exa credentials, fetches quota inside OpenCode and sends secret-free readings to the existing service. No Usage-area contribution or stored-key fallback. Refresh always means all providers: internal per-provider schedulers decide whether to fetch, return cache or join running work.
 
-Settings and Tavily/custom connections are shared by clients of the same OpenChamber server. Replace browser-local preference authority with a server-owned versioned settings document. No migration of old development records is required because there are no external users yet; do not implement automatic wiping or an upgrade-reset mechanism. Supported state persists normally, and OpenCode logins are untouched. Stale quota remains explicitly historical, including after an old reset time.
+Clients of the same OpenChamber server share a versioned settings document. Supported settings and cache persist normally without automatic wiping or migration. OpenCode logins are untouched. Stale quota remains historical, including after an old reset time.
 
 ## Technical Context
 
@@ -14,7 +14,7 @@ Settings and Tavily/custom connections are shared by clients of the same OpenCha
 
 **Primary Dependencies**: Existing `@openchamber/sdk` 2.7.3, Ajv/ajv-formats and Playwright. T001 verifies plugin credential resolution, setup/cleanup, filesystem and option delivery on the actual supported OpenCode/OpenChamber baseline. No guessed credential API or runtime imports are treated as verified.
 
-**Storage**: `OPENCHAMBER_SERVICE_DATA_DIR` owns supported `connections.json`, `display.json` and `cache.json`, preserved across normal startups/reloads. No storage epoch marker, automatic reset or authoritative host.storage selection. Nonsecret scheduler state is server-bound; descriptor discovery uses protected `<serverId>.json` files, not one shared global file. Tokens are never provider credentials.
+**Storage**: `OPENCHAMBER_SERVICE_DATA_DIR` owns `display.json` and `cache.json`. There is no automatic reset or authoritative host.storage selection. Scheduler state is server-bound. Each server has a protected `<serverId>.json` descriptor with a bridge token.
 
 **Testing**: Bun unit/contract/integration, TypeScript checks, four bundles, package guest check, Playwright accessibility and targeted live smoke checks. Tests use fixture credentials, never real tokens in logs.
 
@@ -24,9 +24,9 @@ Settings and Tavily/custom connections are shared by clients of the same OpenCha
 
 **Performance Goals**: Healthy request discovery target: one-second poll plus local transport. Per-provider operation has a ten-second total budget after discovery, including sequential fallback endpoints; one-second publication allowance. Bridge request deadline twelve seconds; UI wait fifteen seconds. Controlled tests verify budgets. Cache-only cycles can finish earlier. Do not claim successful fresh reads during provider outages, rate limits or retry waits.
 
-**Constraints**: No provider-filter refresh input. Complete four-provider bridge result for every cycle. One per-server/provider plugin scheduler for all triggers; manual requests do not bypass limits. Service independently limits Tavily/custom. Keep last successful sample and actual fetchedAt on reuse. HTTPS-only upstream calls, no redirects, 64 KiB bodies, scoped bridge token vs UI-service token. Use explicit server binding; never choose among multiple discovery entries arbitrarily.
+**Constraints**: No provider-filter refresh input. Complete six-provider bridge result every cycle. One scheduler per server/provider for all triggers: five-minute polls, 30-second manual/event floor, and Retry-After. Preserve sample time on reuse. HTTPS only, no redirects, 64 KiB bodies, separate bridge and UI-service tokens. Never choose among multiple discovery entries without explicit binding.
 
-**Scale/Scope**: Four built-in OpenCode categories plus configured Tavily and existing/newly permitted custom connections; custom setup remains hidden under ADR-007. Multiple UI clients on one server share settings; distinct servers remain isolated. Multiple plugin contexts on the same server must share one coordinator or fail closed, not double provider calls.
+**Scale/Scope**: Six OpenCode-backed providers. Clients of one server share settings; distinct servers are isolated. Plugin contexts for the same server must share one coordinator or fail closed.
 
 ## Constitution Check
 
@@ -62,8 +62,8 @@ src/core/
   snapshot-merge.ts                   # complete cycles, last-success and historical state
 src/opencode-plugin/
   index.ts                           # all-trigger scheduler, coordinator and teardown
-  credentials.ts                     # selected four credentials; Zen org mapping
-  fetch.ts                           # complete four-entry cached/fresh/error result
+  credentials.ts                     # selected six credentials; Zen org mapping and Tavily/Exa env resolution
+  fetch.ts                           # complete six-entry cached/fresh/error result
   http.ts                            # fetch-based transport; cycle abort signal
   bridge.ts                          # bound server discovery, request acknowledgement
   index.js                           # built, self-contained plugin
@@ -72,10 +72,8 @@ src/service/
   bridge.ts                          # request admission/join, deadlines, result validation
   bridge-descriptor.ts               # atomic write and ownership-checked cleanup
   settings.ts                        # shared display document and conflict-safe patch
-  scheduler.ts                       # service-owned Tavily/custom scheduling
   snapshot.ts                        # merged snapshot and cache
   routes.ts                          # all-provider refresh, settings and bridge endpoints
-  credentials.ts                     # post-upgrade Tavily/custom only
   http.ts                            # service transport, shared error re-export
 src/providers/                       # shared adapters; Codex no CLI auth fallback
 src/section/
@@ -109,7 +107,7 @@ tests/a11y/accessibility.pw.ts
 1. Prove plugin feasibility, scoped credentials, server binding and single-coordinator ownership.
 2. Update approved living docs, introduce preserved server-owned settings and separate discovery files per server; omit legacy migration and automatic reset machinery.
 3. Implement request ids, all-provider admission/coalescing, ten-second abortable fetch budget and complete result publication. Cache results acknowledge the cycle without updating sample age.
-4. Use one authoritative scheduler for every plugin trigger and service schedulers for Tavily/custom. Persist only nonsecret scheduling times.
+4. Use one authoritative scheduler for every plugin trigger. Persist only nonsecret scheduling state.
 5. Correct Zen's secret.accountId mapping, implement first-success window initialization and explicit pre-data choices, and render stale expired samples as historical.
 6. Test settings concurrency/persistence, full result validation, timer/manual collisions, deadline boundaries, server-safe cleanup and credential secrecy. Run live checks only after automated gates; reconcile with actual outcome.
 

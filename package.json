@@ -1,6 +1,7 @@
 {
   "name": "openchamber-quota-display",
   "version": "0.2.4",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "openchamber": {
@@ -10,7 +11,7 @@
     },
     "id": "quota-display",
     "name": "Quota display",
-    "icon": "bar-chart-2",
+    "icon": "pie-chart-2",
     "contributes": {
       "statusSection": {
         "entry": "src/section/index.html",
@@ -25,14 +26,16 @@
       "service": {
         "entry": "src/service/main.js",
         "runtime": "host"
-      }
+      },
+      "opencodePlugin": "src/opencode-plugin"
     }
   },
   "scripts": {
-    "build": "bun run build:section && bun run build:settings && bun run build:service",
+    "build": "bun run build:section && bun run build:settings && bun run build:service && bun run build:plugin",
     "build:section": "bun build src/section/main.ts --outfile src/section/main.js --target browser --format iife --minify",
     "build:settings": "bun build src/settings/main.ts --outfile src/settings/main.js --target browser --format iife --minify",
     "build:service": "bun build src/service/main.ts --outfile src/service/main.js --target node --format esm",
+    "build:plugin": "bun build src/opencode-plugin/index.ts --outfile src/opencode-plugin/index.js --target node --format esm --minify",
     "typecheck": "tsc -p tsconfig.json",
     "test": "bun test",
     "test:a11y": "playwright test"

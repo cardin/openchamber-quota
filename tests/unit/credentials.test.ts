@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { CredentialStore } from "../../src/service/credentials.ts";
@@ -26,16 +26,26 @@ describe("credential store", () => {
     expect(file).toContain("secret-key");
   });
 
-  test("rejects duplicate named providers and removes entries", async () => {
+  test("rejects duplicate custom labels and removes entries", async () => {
     const dir = await temp();
     const store = new CredentialStore(dir);
     await store.load();
-    await store.upsert({ kind: "tavily", label: "Tavily", apiKey: "tvly-1" });
+    const first = await store.upsert({
+      kind: "custom",
+      label: "Gateway",
+      endpoint: "https://one.example/quota",
+      apiKey: "key-1",
+    });
     await expect(
-      store.upsert({ kind: "tavily", label: "Tavily 2", apiKey: "tvly-2" }),
+      store.upsert({
+        kind: "custom",
+        label: "Gateway",
+        endpoint: "https://two.example/quota",
+        apiKey: "key-2",
+      }),
     ).rejects.toThrow("already exists");
-    expect(await store.remove("tavily")).toBe(true);
-    expect(await store.remove("tavily")).toBe(false);
+    expect(await store.remove(first.id)).toBe(true);
+    expect(await store.remove(first.id)).toBe(false);
   });
 
   test("keeps a custom provider id across updates", async () => {
@@ -57,5 +67,61 @@ describe("credential store", () => {
     });
     expect(second.id).toBe(first.id);
     expect(store.get(first.id)?.secret.apiKey).toBe("two");
+  });
+
+  test("rejects stored OpenCode keys and leaves old development records untouched", async () => {
+    const dir = await temp();
+    await writeFile(
+      path.join(dir, "connections.json"),
+      JSON.stringify({
+        version: 1,
+        connections: [
+          {
+            id: "openrouter",
+            kind: "openrouter",
+            label: "OpenRouter",
+            createdAt: "2026-01-01T00:00:00Z",
+            secret: { apiKey: "legacy-development-key" },
+          },
+          {
+            id: "tavily",
+            kind: "tavily",
+            label: "Tavily",
+            createdAt: "2026-01-01T00:00:00Z",
+            secret: { apiKey: "legacy-tavily-key" },
+          },
+        ],
+      }),
+    );
+    const store = new CredentialStore(dir);
+    await store.load();
+    expect(store.list()).toEqual([]);
+    expect(store.entries()).toEqual([]);
+    expect(store.get("openrouter")).toBeUndefined();
+    expect(store.get("tavily")).toBeUndefined();
+    for (const kind of ["openrouter", "tavily", "exa"] as const) {
+      await expect(
+        store.upsert({ kind, label: kind, apiKey: "new" }),
+      ).rejects.toThrow("signs in through OpenCode");
+    }
+
+    const custom = await store.upsert({
+      kind: "custom",
+      label: "Gateway",
+      endpoint: "https://example.com/quota",
+      apiKey: "custom-key",
+    });
+    const file = JSON.parse(await readFile(path.join(dir, "connections.json"), "utf8"));
+    expect(file.connections.some((entry: { kind: string }) => entry.kind === "openrouter")).toBe(
+      true,
+    );
+    expect(file.connections.some((entry: { kind: string }) => entry.kind === "tavily")).toBe(
+      true,
+    );
+
+    const reloaded = new CredentialStore(dir);
+    await reloaded.load();
+    expect(reloaded.list().map((entry) => entry.kind)).toEqual(["custom"]);
+    expect(reloaded.get(custom.id)?.secret.apiKey).toBe("custom-key");
   });
 });

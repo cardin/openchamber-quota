@@ -1,7 +1,25 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import {
+  BRIDGE_PROVIDERS,
+  BridgeTiming,
+  RETRY_WAIT_MAX_MS,
+  isBridgeConnectionId,
+} from "../core/bridge.ts";
+import { serverIdFor } from "../core/bridge-path.ts";
+import {
+  bridgeUnavailableMessage,
+  isStaleSample,
+  markBridgePending,
+  markBridgeUnavailable,
+  mergeBridgeResult,
+  notConfiguredEntry,
+  sanitizeMessage,
+} from "../core/snapshot-merge.ts";
 import type {
+  BridgeSnapshot,
+  BridgeState,
   Connection,
   ProviderSnapshot,
   QuotaError,
@@ -14,6 +32,8 @@ import type { AdapterContext } from "../providers/types.ts";
 import { HttpError, requestJson } from "./http.ts";
 import type { CredentialStore } from "./credentials.ts";
 import type { Scheduler } from "./scheduler.ts";
+import type { SettingsService } from "./settings.ts";
+import { BridgeService } from "./bridge.ts";
 import { validateSnapshot } from "./snapshot-schema.ts";
 
 type Deps = {
@@ -21,8 +41,16 @@ type Deps = {
   scheduler: Scheduler;
   dataDir: string;
   now?: () => number;
-  codexHome?: string;
   requestJson?: typeof requestJson;
+  bridge?: BridgeService;
+  settings?: SettingsService;
+};
+
+type CacheFile = Snapshot & {
+  bridgeConnected?: boolean;
+  bridgePublication?: number;
+  lastSuccess?: Record<string, ProviderSnapshot>;
+  scheduler?: ReturnType<Scheduler["exportState"]>;
 };
 
 const emptyProvider = (connection: Connection): ProviderSnapshot => ({
@@ -33,50 +61,133 @@ const emptyProvider = (connection: Connection): ProviderSnapshot => ({
   windows: [],
   caps: [],
   balances: [],
-  refreshing: true,
+  refreshing: false,
 });
 
 const toQuotaError = (error: unknown): QuotaError => {
   if (error instanceof HttpError) {
     return {
       code: error.code,
-      message: error.message,
+      message: sanitizeMessage(error.message),
       ...(error.retryAt ? { retryAt: error.retryAt } : {}),
     };
   }
   return { code: "provider_error", message: "The provider request failed." };
 };
 
+const transient = (error: QuotaError): boolean =>
+  !["auth", "not_configured"].includes(error.code);
+
 export class SnapshotService {
   private readonly providers = new Map<string, ProviderSnapshot>();
+  private readonly lastSuccess = new Map<string, ProviderSnapshot>();
   private readonly retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private generatedAt = new Date(0).toISOString();
   private readonly now: () => number;
+  private readonly bridge: BridgeService;
+  private bridgeConnected = false;
+  private cacheWrites = Promise.resolve();
+  private serviceTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private readonly deps: Deps) {
     this.now = deps.now ?? Date.now;
+    this.bridge =
+      deps.bridge ??
+      new BridgeService({ serverId: serverIdFor(deps.dataDir), now: this.now });
+  }
+
+  private get settings(): SettingsService | undefined {
+    return this.deps.settings;
+  }
+
+  start(): void {
+    if (this.serviceTimer !== null) return;
+    this.serviceTimer = setInterval(
+      () => void this.refreshServiceProviders().catch(() => undefined),
+      BridgeTiming.fetchIntervalMs,
+    );
+    this.serviceTimer.unref?.();
+  }
+
+  stop(): void {
+    if (this.serviceTimer !== null) clearInterval(this.serviceTimer);
+    this.serviceTimer = null;
   }
 
   async loadCache(): Promise<void> {
     try {
-      const { scheduler, ...cached } = JSON.parse(
+      const cached = JSON.parse(
         await readFile(path.join(this.deps.dataDir, "cache.json"), "utf8"),
-      ) as Snapshot & { scheduler?: ReturnType<Scheduler["exportState"]> };
-      if (!validateSnapshot(cached)) return;
+      ) as CacheFile;
+      if (
+        !validateSnapshot({
+          version: cached.version,
+          generatedAt: cached.generatedAt,
+          providers: cached.providers,
+        })
+      ) {
+        return;
+      }
       this.generatedAt = cached.generatedAt;
-      for (const provider of cached.providers) this.providers.set(provider.connectionId, provider);
-      this.deps.scheduler.importState(scheduler);
+      this.bridgeConnected = cached.bridgeConnected === true ||
+        Object.keys(cached.lastSuccess ?? {}).some(isBridgeConnectionId) ||
+        cached.providers.some((provider) => isBridgeConnectionId(provider.connectionId) && provider.fetchedAt);
+      this.bridge.restorePublication(cached.bridgePublication);
+      for (const provider of cached.providers) {
+        // Until this process receives a bridge result, a restored sample is
+        // historical rather than a current reading.
+        this.providers.set(
+          provider.connectionId,
+          isBridgeConnectionId(provider.connectionId) &&
+            provider.state === "ok" &&
+            provider.fetchedAt
+            ? {
+                ...provider,
+                error: { code: "provider_error", message: bridgeUnavailableMessage },
+              }
+            : provider,
+        );
+      }
+      const success = (provider: ProviderSnapshot): ProviderSnapshot => ({
+        ...structuredClone(provider),
+        error: undefined,
+      });
+      if (cached.lastSuccess && typeof cached.lastSuccess === "object") {
+        for (const [id, provider] of Object.entries(cached.lastSuccess)) {
+          this.lastSuccess.set(id, success(provider));
+        }
+      } else {
+        for (const provider of cached.providers) {
+          if (provider.state === "ok" && provider.fetchedAt) {
+            this.lastSuccess.set(provider.connectionId, success(provider));
+          }
+        }
+      }
+      this.deps.scheduler.importState(cached.scheduler);
+      this.ensureBridgeProviders();
     } catch {
       // No cache is fine.
     }
   }
 
-  private context(): AdapterContext {
+  private ensureBridgeProviders(): void {
+    for (const row of BRIDGE_PROVIDERS) {
+      if (this.providers.has(row.connectionId)) continue;
+      const success = this.lastSuccess.get(row.connectionId);
+      this.providers.set(
+        row.connectionId,
+        success ? structuredClone(success) : notConfiguredEntry(row),
+      );
+    }
+  }
+
+  private context(deadlineAt: number, signal: AbortSignal): AdapterContext {
     return {
       now: this.now,
       requestJson: this.deps.requestJson ?? requestJson,
       dataDir: this.deps.dataDir,
-      codexHome: this.deps.codexHome,
+      deadlineAt,
+      signal,
     };
   }
 
@@ -89,50 +200,106 @@ export class SnapshotService {
     }
     const created = emptyProvider(connection);
     this.providers.set(connection.id, created);
-    this.startRefresh(connection.id);
     return created;
   }
 
+  bridgeProviders(): ProviderSnapshot[] {
+    this.ensureBridgeProviders();
+    return BRIDGE_PROVIDERS.map((row) =>
+      structuredClone(this.providers.get(row.connectionId)!),
+    );
+  }
+
   getSnapshot(): Snapshot {
+    this.ensureBridgeProviders();
+    if (this.bridge.isExpired()) {
+      this.markUnavailable(bridgeUnavailableMessage);
+    }
     const connections = this.deps.store.list();
     const ids = new Set(connections.map((connection) => connection.id));
     for (const id of this.providers.keys()) {
-      if (!ids.has(id)) {
-        this.providers.delete(id);
-        this.clearRetry(id);
-      }
+      if (ids.has(id) || BRIDGE_PROVIDERS.some((row) => row.connectionId === id)) continue;
+      this.providers.delete(id);
+      this.lastSuccess.delete(id);
+      this.clearRetry(id);
     }
+    const pending = this.bridge.pending();
+    const bridgeEntries = BRIDGE_PROVIDERS.map((row) => {
+      const entry = this.providers.get(row.connectionId)!;
+      const current = entry.refreshing === pending ? entry : { ...entry, refreshing: pending };
+      if (current.state === "ok" && !current.error && isStaleSample(current, this.now())) {
+        return {
+          ...current,
+          error: {
+            code: "provider_error" as const,
+            message: "The last reading is more than ten minutes old.",
+          },
+        };
+      }
+      return current;
+    });
+    const serviceEntries = connections.map((connection) => {
+      const entry = this.snapshotFor(connection);
+      if (entry.state === "loading") this.startRefresh(connection.id);
+      return entry;
+    });
     return {
       version: 1,
       generatedAt: this.generatedAt,
-      providers: connections.map((connection) => this.snapshotFor(connection)),
+      providers: [...serviceEntries, ...bridgeEntries],
     };
+  }
+
+  async refreshAll(): Promise<{ requestId: string; deadlineAt: number }> {
+    const request = this.bridge.admit();
+    if (this.bridge.isExpired()) this.markUnavailable(bridgeUnavailableMessage);
+    this.markPending(true);
+    void this.refreshServiceProviders(true).catch(() => undefined);
+    return request;
+  }
+
+  /** Test/helper path: admit one cycle and wait for service-owned work. */
+  async refreshAllAndWait(): Promise<{ requestId: string; deadlineAt: number }> {
+    const request = this.bridge.admit();
+    if (this.bridge.isExpired()) this.markUnavailable(bridgeUnavailableMessage);
+    this.markPending(true);
+    await this.refreshServiceProviders(true);
+    return request;
+  }
+
+  async refreshServiceProviders(manual = false): Promise<void> {
+    await Promise.all(this.deps.store.entries().map((entry) => this.refreshOne(entry, manual)));
+    this.generatedAt = new Date(this.now()).toISOString();
+    await this.saveCache();
   }
 
   isRefreshing(connectionId?: string): boolean {
     if (connectionId) return this.deps.scheduler.isRefreshing(connectionId);
-    return this.deps.store.list().some((connection) =>
-      this.deps.scheduler.isRefreshing(connection.id),
+    return this.bridge.pending() || this.deps.store.entries().some((entry) =>
+      this.deps.scheduler.isRefreshing(entry.id),
     );
   }
 
   startRefresh(connectionId?: string): void {
-    void this.refresh(connectionId).catch(() => undefined);
+    if (connectionId) {
+      const entry = this.deps.store.get(connectionId);
+      if (entry) void this.refreshOne(entry).catch(() => undefined);
+      return;
+    }
+    void this.refreshAll().catch(() => undefined);
   }
 
   async refresh(connectionId?: string): Promise<Snapshot> {
-    const entries = connectionId
-      ? this.deps.store.get(connectionId)
-        ? [this.deps.store.get(connectionId)!]
-        : []
-      : this.deps.store.entries();
-    await Promise.all(entries.map((entry) => this.refreshOne(entry)));
-    this.generatedAt = new Date(this.now()).toISOString();
-    await this.saveCache();
+    if (connectionId) {
+      const entry = this.deps.store.get(connectionId);
+      if (entry) await this.refreshOne(entry, true);
+    } else {
+      await this.refreshAllAndWait();
+    }
     return this.getSnapshot();
   }
 
-  async refreshOne(entry: StoredConnection): Promise<void> {
+  async refreshOne(entry: StoredConnection, manual = false): Promise<void> {
     const provider = this.snapshotFor(entry);
     const adapter = ADAPTERS[entry.kind];
     if (!adapter) {
@@ -143,7 +310,7 @@ export class SnapshotService {
     }
 
     const now = this.now();
-    if (!this.deps.scheduler.begin(entry.id, adapter.minIntervalMs, now)) {
+    if (!this.deps.scheduler.begin(entry.id, adapter.minIntervalMs, now, { manual })) {
       provider.refreshing = this.deps.scheduler.isRefreshing(entry.id);
       if (!provider.refreshing) this.scheduleRetry(entry, adapter.minIntervalMs);
       return;
@@ -151,28 +318,132 @@ export class SnapshotService {
     this.clearRetry(entry.id);
 
     provider.refreshing = true;
+    const controller = new AbortController();
+    const deadlineAt = now + BridgeTiming.fetchTimeoutMs;
+    const timer = setTimeout(() => controller.abort(), BridgeTiming.fetchTimeoutMs);
+    timer.unref?.();
     try {
-      const result = await adapter.fetch(entry, this.context());
+      const result = await adapter.fetch(entry, this.context(deadlineAt, controller.signal));
       assertAdapterResult(result);
-      provider.state = "ok";
-      provider.windows = result.windows;
-      provider.caps = result.caps;
-      provider.balances = result.balances;
-      provider.fetchedAt = new Date(now).toISOString();
-      provider.error = undefined;
+      const fresh: ProviderSnapshot = {
+        ...provider,
+        state: "ok",
+        windows: result.windows,
+        caps: result.caps,
+        balances: result.balances,
+        fetchedAt: new Date(this.now()).toISOString(),
+        refreshing: false,
+        error: undefined,
+      };
+      this.providers.set(entry.id, fresh);
+      this.lastSuccess.set(entry.id, structuredClone(fresh));
       this.deps.scheduler.finish(entry.id);
     } catch (error) {
       const quotaError = toQuotaError(error);
-      provider.state = "error";
-      provider.windows = [];
-      provider.caps = [];
-      provider.balances = [];
-      provider.error = quotaError;
+      const sample = this.lastSuccess.get(entry.id);
+      if (sample && transient(quotaError)) {
+        this.providers.set(entry.id, {
+          ...structuredClone(sample),
+          state: "ok",
+          refreshing: false,
+          error: { code: "provider_error", message: quotaError.message },
+        });
+      } else {
+        this.providers.set(entry.id, {
+          ...provider,
+          state: "error",
+          windows: [],
+          caps: [],
+          balances: [],
+          refreshing: false,
+          error: quotaError,
+        });
+      }
       const retryAt = quotaError.retryAt ? Date.parse(quotaError.retryAt) : undefined;
-      this.deps.scheduler.finish(entry.id, retryAt);
+      this.deps.scheduler.finish(
+        entry.id,
+        retryAt && Number.isFinite(retryAt)
+          ? Math.min(retryAt, this.now() + RETRY_WAIT_MAX_MS)
+          : undefined,
+        true,
+      );
     } finally {
-      provider.refreshing = false;
+      clearTimeout(timer);
+      const current = this.providers.get(entry.id);
+      if (current) current.refreshing = false;
     }
+  }
+
+  private markPending(pending: boolean): void {
+    const state = {
+      current: Object.fromEntries(this.providers),
+      lastSuccess: Object.fromEntries(this.lastSuccess),
+    };
+    const merged = markBridgePending(state, pending);
+    for (const row of BRIDGE_PROVIDERS) {
+      const entry = merged.current[row.connectionId];
+      if (entry) this.providers.set(row.connectionId, entry);
+    }
+  }
+
+  private markUnavailable(message: string): void {
+    const state = markBridgeUnavailable(
+      {
+        current: Object.fromEntries(this.providers),
+        lastSuccess: Object.fromEntries(this.lastSuccess),
+      },
+      this.now(),
+      message,
+      this.bridgeConnected,
+    );
+    for (const row of BRIDGE_PROVIDERS) {
+      const entry = state.current[row.connectionId];
+      if (entry) this.providers.set(row.connectionId, entry);
+    }
+    this.generatedAt = new Date(this.now()).toISOString();
+  }
+
+  async acceptBridge(snapshot: BridgeSnapshot): Promise<void> {
+    this.bridgeConnected = true;
+    const merged = mergeBridgeResult(
+      {
+        current: Object.fromEntries(this.providers),
+        lastSuccess: Object.fromEntries(this.lastSuccess),
+      },
+      snapshot.providers,
+      this.now(),
+    );
+    for (const row of BRIDGE_PROVIDERS) {
+      const entry = merged.current[row.connectionId];
+      if (entry) {
+        entry.refreshing = false;
+        this.providers.set(row.connectionId, entry);
+      }
+      const success = merged.lastSuccess[row.connectionId];
+      if (success) this.lastSuccess.set(row.connectionId, success);
+      else this.lastSuccess.delete(row.connectionId);
+    }
+    this.generatedAt = new Date(this.now()).toISOString();
+    await this.settings?.reconcile(this.bridgeProviders());
+    await this.saveCache();
+  }
+
+  async acceptBridgeInput(
+    input: unknown,
+  ): Promise<{ ok: true; requestId: string | null } | { ok: false; status: number; message: string }> {
+    const accepted = this.bridge.accept(input);
+    if (this.bridge.isExpired()) this.markUnavailable(bridgeUnavailableMessage);
+    if (!accepted.ok) return accepted;
+    await this.acceptBridge(accepted.snapshot);
+    return { ok: true, requestId: accepted.snapshot.requestId };
+  }
+
+  async bridgeState(): Promise<BridgeState> {
+    if (this.bridge.isExpired()) {
+      this.markUnavailable(bridgeUnavailableMessage);
+      await this.saveCache();
+    }
+    return this.bridge.state();
   }
 
   private scheduleRetry(entry: StoredConnection, minIntervalMs: number): void {
@@ -183,7 +454,7 @@ export class SnapshotService {
     if (delay > 24 * 60 * 60 * 1000) return;
     const timer = setTimeout(() => {
       this.retryTimers.delete(entry.id);
-      void this.refresh(entry.id).catch(() => undefined);
+      void this.refreshServiceProviders().catch(() => undefined);
     }, delay);
     timer.unref?.();
     this.retryTimers.set(entry.id, timer);
@@ -201,8 +472,16 @@ export class SnapshotService {
     if (!entry) return { ok: false, error: { code: "not_configured", message: "No connection." } };
     const adapter = ADAPTERS[entry.kind];
     if (!adapter) return { ok: false, error: { code: "provider_error", message: "Unsupported provider." } };
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), BridgeTiming.fetchTimeoutMs);
+    timer.unref?.();
     try {
-      assertAdapterResult(await adapter.fetch(entry, this.context()));
+      assertAdapterResult(
+        await adapter.fetch(
+          entry,
+          this.context(this.now() + BridgeTiming.fetchTimeoutMs, controller.signal),
+        ),
+      );
       await this.deps.store.setTestResult(id, "ok");
       return { ok: true };
     } catch (error) {
@@ -217,18 +496,27 @@ export class SnapshotService {
               : "provider_error";
       await this.deps.store.setTestResult(id, result);
       return { ok: false, error: quotaError };
+    } finally {
+      clearTimeout(timer);
     }
   }
 
-  private async saveCache(): Promise<void> {
-    await mkdir(this.deps.dataDir, { recursive: true });
-    const file = path.join(this.deps.dataDir, "cache.json");
-    const temp = `${file}.${process.pid}.${randomUUID()}.tmp`;
-    await writeFile(
-      temp,
-      JSON.stringify({ ...this.getSnapshot(), scheduler: this.deps.scheduler.exportState() }, null, 2),
-      { mode: 0o600 },
-    );
-    await rename(temp, file);
+  private saveCache(): Promise<void> {
+    const write = async () => {
+      await mkdir(this.deps.dataDir, { recursive: true });
+      const file = path.join(this.deps.dataDir, "cache.json");
+      const temp = `${file}.${process.pid}.${randomUUID()}.tmp`;
+      const payload = {
+        ...this.getSnapshot(),
+        bridgeConnected: this.bridgeConnected,
+        bridgePublication: this.bridge.lastPublication(),
+        lastSuccess: Object.fromEntries(this.lastSuccess),
+        scheduler: this.deps.scheduler.exportState(),
+      };
+      await writeFile(temp, JSON.stringify(payload, null, 2), { mode: 0o600 });
+      await rename(temp, file);
+    };
+    this.cacheWrites = this.cacheWrites.then(write, write);
+    return this.cacheWrites;
   }
 }

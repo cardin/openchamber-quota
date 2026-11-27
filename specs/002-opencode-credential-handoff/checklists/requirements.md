@@ -31,10 +31,10 @@
 
 ## Notes
 
-- Decisions recorded: all four OpenCode-supported providers are in scope (OpenRouter, OpenCode Go, OpenCode Zen, OpenAI Codex); the Quotas section shows all six supported providers; the extension adds no row to OpenChamber's Usage area; an OpenCode plugin fetches the four inside OpenCode and sends only usage readings to the service; no stored-key fallback.
-- Old development records need no migration because there are no external users yet. No automatic wipe/reset is added; supported Tavily/custom keys, settings and cache persist normally, and OpenCode logins are untouched.
+- Decisions recorded: all six OpenCode-supported providers are in scope (OpenRouter, OpenCode Go, OpenCode Zen, OpenAI, Tavily, Exa); the Quotas section shows the providers that are signed in; the extension adds no row to OpenChamber's Usage area; an OpenCode plugin fetches the six inside OpenCode and sends only usage readings to the service; no stored-key fallback.
+- Old development data need not be migrated or wiped. Settings and cache persist, and OpenCode logins are untouched.
 - ADR-010 governs the plugin bridge and supersedes ADR-009 for credential sourcing. The plugin grant is full access, so the extension's code is the only limit on which providers it reads.
-- Failure behavior: the four keep their last reading with a bridge-unavailable notice; Tavily/custom continue. The bridge is local-only; remote OpenCode is unsupported for the four.
+- Failure behavior: eligible last readings stay visible with a bridge-unavailable notice. The bridge is local-only.
 - The extension's display preferences apply to all six providers in the Quotas section.
 - Settings are authoritative on the OpenChamber server and shared by its clients, not instance-local. First-success window initialization preserves explicit choices made before data arrived.
 - Refresh covers all providers; cache/in-flight/fresh results all acknowledge the full cycle. One-second discovery and ten-second whole-operation timeout are separate budgets; tests/implementation remain pending.

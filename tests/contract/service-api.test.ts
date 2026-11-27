@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { CredentialStore } from "../../src/service/credentials.ts";
+import { SettingsService } from "../../src/service/settings.ts";
 import { SnapshotService } from "../../src/service/snapshot.ts";
 import { Scheduler } from "../../src/service/scheduler.ts";
 import { handleRequest } from "../../src/service/routes.ts";
@@ -31,12 +32,36 @@ const deps = async (): Promise<{ deps: RouteDeps; dir: string; refreshed: string
   const dir = await mkdtemp(path.join(os.tmpdir(), "quota-routes-"));
   const store = new CredentialStore(dir);
   await store.load();
+  const settings = new SettingsService(dir);
+  await settings.load();
   const refreshed: string[] = [];
   const snapshot = {
     getSnapshot: contractFixture,
-    startRefresh: (id?: string) => refreshed.push(id ?? "all"),
+    refreshAll: async () => {
+      refreshed.push("all");
+      return { requestId: "refresh-test", deadlineAt: NOW + 12_000 };
+    },
+    startRefresh: () => refreshed.push("all"),
     isRefreshing: () => false,
     testConnection: async () => ({ ok: true }),
+    bridgeState: async () => ({
+      version: 1 as const,
+      serverId: "a".repeat(64),
+      providers: ["openrouter", "opencode-go", "opencode", "openai", "tavily", "exa"] as const,
+      refreshRequested: false,
+      requestId: null,
+      deadlineAt: null,
+      providerMinimums: {
+        openrouter: 300_000,
+        "opencode-go": 300_000,
+        opencode: 300_000,
+        openai: 300_000,
+        tavily: 300_000,
+        exa: 300_000,
+      },
+      serverTime: NOW,
+    }),
+    acceptBridgeInput: async () => ({ ok: true as const, requestId: null }),
   } as unknown as SnapshotService;
   return {
     dir,
@@ -44,6 +69,7 @@ const deps = async (): Promise<{ deps: RouteDeps; dir: string; refreshed: string
     deps: {
       store,
       snapshot,
+      settings,
       token: "token",
       dataDir: dir,
     },
@@ -127,18 +153,22 @@ describe("service contracts", () => {
       const loading = await handleRequest(routeDeps, request("GET", "/snapshot"));
       expect(loading.status).toBe(200);
       expect(validate(loading.body)).toBe(true);
-      expect(loading.body).toMatchObject({ providers: [{ state: "loading", refreshing: true }] });
+      const loadingProviders = (loading.body as { providers: Array<Record<string, unknown>> }).providers;
+      expect(loadingProviders.find((entry) => entry.connectionId === id)).toMatchObject({
+        state: "loading",
+        refreshing: true,
+      });
+      expect(loadingProviders).toHaveLength(7);
       await snapshot.pending;
       const ready = await handleRequest(routeDeps, request("GET", "/snapshot"));
       expect(fetched).toBe(true);
       expect(ready.status).toBe(200);
       expect(validate(JSON.parse(JSON.stringify(ready.body)))).toBe(true);
-      expect(ready.body).toMatchObject({
-        providers: [{
-          state: "ok",
-          refreshing: false,
-          windows: [{ resetAt: new Date(RESET).toISOString(), remainingPercent: 25 }],
-        }],
+      const readyProviders = (ready.body as { providers: Array<Record<string, unknown>> }).providers;
+      expect(readyProviders.find((entry) => entry.connectionId === id)).toMatchObject({
+        state: "ok",
+        refreshing: false,
+        windows: [{ resetAt: new Date(RESET).toISOString(), remainingPercent: 25 }],
       });
       expect(JSON.stringify(ready.body)).not.toContain("fixture-secret");
     } finally {
@@ -191,7 +221,7 @@ describe("service contracts", () => {
     expect((list.body as { connections: unknown[] }).connections).toHaveLength(1);
   });
 
-  test("rejects invalid custom endpoints and duplicate named providers", async () => {
+  test("rejects invalid custom endpoints and duplicate custom labels", async () => {
     const { deps: routeDeps } = await deps();
     const invalid = await handleRequest(
       routeDeps,
@@ -210,35 +240,72 @@ describe("service contracts", () => {
 
     const first = await handleRequest(
       routeDeps,
-      request("POST", "/connections", JSON.stringify({ kind: "tavily", label: "Tavily", apiKey: "tvly-1" })),
+      request("POST", "/connections", JSON.stringify({
+        kind: "custom",
+        label: "Gateway",
+        endpoint: "https://one.example/quota",
+        apiKey: "key-1",
+      })),
     );
     expect(first.status).toBe(201);
     const second = await handleRequest(
       routeDeps,
-      request("POST", "/connections", JSON.stringify({ kind: "tavily", label: "Tavily 2", apiKey: "tvly-2" })),
+      request("POST", "/connections", JSON.stringify({
+        kind: "custom",
+        label: "Gateway",
+        endpoint: "https://two.example/quota",
+        apiKey: "key-2",
+      })),
     );
     expect(second.status).toBe(409);
   });
 
-  test("refresh accepts and starts a background refresh", async () => {
+  test("refresh admits one all-provider request and returns its deadline", async () => {
     const { deps: routeDeps, refreshed } = await deps();
     const result = await handleRequest(routeDeps, request("POST", "/refresh", JSON.stringify({})));
     expect(result.status).toBe(202);
+    expect(result.body).toEqual({
+      accepted: true,
+      requestId: "refresh-test",
+      deadlineAt: NOW + 12_000,
+    });
     expect(refreshed).toEqual(["all"]);
   });
 
-  test("refresh reports an already-running provider", async () => {
+  test("refresh rejects every provider or connection filter", async () => {
     const { deps: routeDeps } = await deps();
-    await handleRequest(
-      routeDeps,
-      request("POST", "/connections", JSON.stringify({ kind: "tavily", label: "Tavily", apiKey: "tvly-1" })),
-    );
-    (routeDeps.snapshot as unknown as { isRefreshing: () => boolean }).isRefreshing = () => true;
-    const result = await handleRequest(
-      routeDeps,
-      request("POST", "/refresh", JSON.stringify({ connectionId: "tavily" })),
-    );
-    expect(result.status).toBe(409);
+    for (const filter of [
+      { connectionId: "tavily" },
+      { provider: "openrouter" },
+      { providerId: "openai" },
+      { providers: ["openrouter"] },
+      { requestedProviders: ["openrouter"] },
+    ]) {
+      const result = await handleRequest(routeDeps, request("POST", "/refresh", JSON.stringify(filter)));
+      expect(result.status).toBe(400);
+      const query = new URLSearchParams(Object.entries(filter).map(([key, value]) => [key, String(value)]));
+      expect((await handleRequest(routeDeps, request("POST", `/refresh?${query}`))).status).toBe(400);
+    }
+  });
+
+  test("bridge routes require the bridge token, and the UI token cannot reach them", async () => {
+    const { deps: routeDeps, dir } = await deps();
+    routeDeps.bridgeToken = "bridge-token";
+    try {
+      const ui = await handleRequest(routeDeps, request("GET", "/bridge/state"));
+      expect(ui.status).toBe(401);
+      const bridgeWrong = await handleRequest(routeDeps, request("GET", "/bridge/state", "", "wrong"));
+      expect(bridgeWrong.status).toBe(401);
+      const bridge = await handleRequest(routeDeps, request("GET", "/bridge/state", "", "bridge-token"));
+      expect(bridge.status).toBe(200);
+      const cross = await handleRequest(
+        routeDeps,
+        request("GET", "/snapshot", "", "bridge-token"),
+      );
+      expect(cross.status).toBe(401);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   test("does not expose a custom TLS configuration endpoint", async () => {

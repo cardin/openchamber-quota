@@ -1,7 +1,8 @@
 import type { Adapter, AdapterContext } from "./types.ts";
+import { PROVIDER_MIN_INTERVAL_MS } from "../core/bridge.ts";
 import { emptyResult } from "./types.ts";
 import { asArray, asNumber, asRecord, asString, bad } from "./parse.ts";
-import { HttpError } from "../service/http.ts";
+import { HttpError } from "../core/http-error.ts";
 import type { Balance, Cap, QuotaWindow, StoredConnection } from "../core/types.ts";
 
 const MAX_ITEMS = 20;
@@ -92,7 +93,7 @@ const parsePayload = (value: unknown): ReturnType<typeof emptyResult> => {
 
 export const customAdapter: Adapter = {
   kind: "custom",
-  minIntervalMs: 5 * 60_000,
+  minIntervalMs: PROVIDER_MIN_INTERVAL_MS,
   fetch: async (connection, context) => {
     const endpoint = endpointOf(connection);
     const apiKey = connection.secret.apiKey;
@@ -100,6 +101,8 @@ export const customAdapter: Adapter = {
     const response = await context.requestJson(endpoint.toString(), {
       headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
       timeoutMs: 10_000,
+      deadlineAt: context.deadlineAt,
+      signal: context.signal,
       maxBytes: 65_536,
     });
     if (

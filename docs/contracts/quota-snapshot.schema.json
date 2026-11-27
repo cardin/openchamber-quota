@@ -48,6 +48,7 @@
           "enum": [
             "custom",
             "codex",
+            "exa",
             "opencode-go",
             "openrouter",
             "tavily",

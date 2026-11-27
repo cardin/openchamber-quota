@@ -1,6 +1,6 @@
 import type { Balance, Cap, QuotaError, QuotaWindow } from "../core/types.ts";
 import type { AdapterResult } from "./types.ts";
-import { HttpError } from "../service/http.ts";
+import { HttpError } from "../core/http-error.ts";
 
 const MAX_ID = 80;
 const MAX_LABEL = 40;

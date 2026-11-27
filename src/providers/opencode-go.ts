@@ -1,6 +1,7 @@
 import type { Adapter } from "./types.ts";
+import { PROVIDER_MIN_INTERVAL_MS } from "../core/bridge.ts";
 import { asNumber, asRecord, toIso } from "./parse.ts";
-import { HttpError } from "../service/http.ts";
+import { HttpError } from "../core/http-error.ts";
 import type { QuotaWindow } from "../core/types.ts";
 
 const FIELDS = [
@@ -37,18 +38,20 @@ const parseConsoleWindows = (payload: unknown): QuotaWindow[] => {
 
 export const openCodeGoAdapter: Adapter = {
   kind: "opencode-go",
-  minIntervalMs: 5 * 60_000,
+  minIntervalMs: PROVIDER_MIN_INTERVAL_MS,
   fetch: async (connection, context) => {
-    const apiKey = connection.secret.apiKey;
-    if (!apiKey) throw new HttpError("not_configured", "OpenCode Go has no API key.");
+    const token = connection.secret.apiKey ?? connection.secret.accessToken;
+    if (!token) throw new HttpError("not_configured", "Sign in to OpenCode Go in OpenCode.");
     const requestOptions = {
       headers: {
         Accept: "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${token}`,
         "x-opencode-session": "openchamber-quota",
         "User-Agent": "OpenChamber quota display",
       },
-      timeoutMs: 15_000,
+      timeoutMs: 10_000,
+      deadlineAt: context.deadlineAt,
+      signal: context.signal,
     };
     // Prefer Console precision, but the Go API can supply a reset for an inactive 5h meter.
     let consoleWindows: QuotaWindow[] = [];
